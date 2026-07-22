@@ -1,88 +1,110 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '../api';
 
-export default function DashboardScreen({ onLogout }) {
-    const colors = { ziraatKirmizi: '#E10514', koyuGri: '#2C3238', acikGri: '#F8F9FA' };
+export default function DashboardScreen({ user, onLogout }) {
+    
+    const colors = { primaryRed: '#E10514', darkGray: '#2C3238', lightGray: '#F8F9FA' };
 
-    const mevcutTarih = new Date();
-    const [seciliYil, setSeciliYil] = useState(mevcutTarih.getFullYear());
-    const [seciliAy, setSeciliAy] = useState(mevcutTarih.getMonth() + 1);
+    const currentDate = new Date();
+    const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
 
     const [isEditMode, setIsEditMode] = useState(false);
-    const [seciliGunler, setSeciliGunler] = useState([]);
+    const [selectedDays, setSelectedDays] = useState([]);
 
-    const gercekYil = mevcutTarih.getFullYear();
-    const gercekAy = mevcutTarih.getMonth() + 1;
-    const gercekGun = mevcutTarih.getDate();
+    const [leaves, setLeaves] = useState([]);
 
-    const gunSayisi = new Date(seciliYil, seciliAy, 0).getDate();
-    const gunler = Array.from({ length: gunSayisi }, (_, i) => i + 1);
-    const gunIsimleri = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
 
-    const aylar = [
-        { deger: 1, ad: 'Ocak' }, { deger: 2, ad: 'Şubat' }, { deger: 3, ad: 'Mart' },
-        { deger: 4, ad: 'Nisan' }, { deger: 5, ad: 'Mayıs' }, { deger: 6, ad: 'Haziran' },
-        { deger: 7, ad: 'Temmuz' }, { deger: 8, ad: 'Ağustos' }, { deger: 9, ad: 'Eylül' },
-        { deger: 10, ad: 'Ekim' }, { deger: 11, ad: 'Kasım' }, { deger: 12, ad: 'Aralık' }
-    ];
-
-    const yillar = Array.from({ length: 5 }, (_, i) => gercekYil + i);
-
-    // YENİ: Farkı görmek için örnek izin verileri eklendi
-    const aktifKullanici = {
-        id: 1,
-        adSoyad: 'Ahmet Yılmaz',
-        departman: 'IT',
-        unvan: 'Uzman',
-        izinler: [
-            { gun: 15, durum: 'Kesinlesen' },
-            { gun: 16, durum: 'Kesinlesen' },
-            { gun: 23, durum: 'Planlanan' },
-            { gun: 24, durum: 'Planlanan' }
-        ]
-    };
-    const personeller = [aktifKullanici, { id: 2, adSoyad: 'Ayşe Demir', departman: 'İK', unvan: 'Müdür', izinler: [] }];
-
-    const handleHucreTikla = (gun, gecmisMi, haftaSonuMu, kayitliIzinVarMi) => {
-        // Düzenleme modunda değilsek, geçmişse, hafta sonuysa veya O GÜN ZATEN İZİNLİYSE tıklanmasın
-        if (!isEditMode || gecmisMi || haftaSonuMu || kayitliIzinVarMi) return;
-
-        if (seciliGunler.includes(gun)) {
-            setSeciliGunler(seciliGunler.filter(g => g !== gun));
-        } else {
-            setSeciliGunler([...seciliGunler, gun]);
+    const fetchLeaves = async () => {
+        if (!user || !user.id) return;
+        try {
+            const response = await api.get(`/Leave/employee/${user.id}`);
+            setLeaves(response.data);
+        } catch (error) {
+            console.error('İzin bilgileri alınırken hata oluştu:', error);
         }
     };
 
-    const handleIptal = () => {
-        setIsEditMode(false);
-        setSeciliGunler([]);
+    useEffect(() => {
+        fetchLeaves();
+    }, [user]);
+
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentDay = currentDate.getDate();
+
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    const dayNames = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+
+    const months = [
+        { value: 1, name: 'Ocak' }, { value: 2, name: 'Şubat' }, { value: 3, name: 'Mart' },
+        { value: 4, name: 'Nisan' }, { value: 5, name: 'Mayıs' }, { value: 6, name: 'Haziran' },
+        { value: 7, name: 'Temmuz' }, { value: 8, name: 'Ağustos' }, { value: 9, name: 'Eylül' },
+        { value: 10, name: 'Ekim' }, { value: 11, name: 'Kasım' }, { value: 12, name: 'Aralık' }
+    ];
+
+    const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
+
+    const currentMonthLeaves = leaves.filter(leave => {
+        const leaveDate = new Date(leave.date);
+        return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
+    })
+    .map(leave => ({
+        day: new Date(leave.date).getDate(),
+        status: leave.status
+    }));
+
+    const currentUser = user ? {
+        id: user.id,
+        fullName: `${user.name} ${user.surname}`,
+        leaves: currentMonthLeaves
+    } : null;
+
+    const staffList = currentUser ? [currentUser] : [];
+
+    const handleCellClick = (day, isPast, isWeekend, hasExistingLeave) => {
+        if (!isEditMode || isPast || isWeekend || hasExistingLeave) return;
+
+        if (selectedDays.includes(day)) {
+            setSelectedDays(selectedDays.filter(d => d !== day));
+        } else {
+            setSelectedDays([...selectedDays, day]);
+        }
     };
+
+    const handleCancel = () => {
+        setIsEditMode(false);
+        setSelectedDays([]);
+    };
+
+    if (!currentUser) {
+        return <div className="d-flex justify-content-center align-items-center vh-100">Kullanıcı bilgileri yükleniyor...</div>;
+    }
 
     return (
         <div className="container-fluid p-0 vh-100 d-flex flex-column" style={{ backgroundColor: '#F0F2F5' }}>
 
-            <header className="navbar navbar-dark sticky-top p-2 shadow" style={{ backgroundColor: colors.koyuGri }}>
+            <header className="navbar navbar-dark sticky-top p-2 shadow" style={{ backgroundColor: colors.darkGray }}>
                 <a className="navbar-brand col-md-3 col-lg-2 me-0 px-3 fw-bold fs-5" href="#">Kurumsal İzin Sistemi</a>
                 <div className="navbar-nav px-3 flex-row gap-3">
-                    <span className="text-white small align-self-center">Hoş geldin, {aktifKullanici.adSoyad}</span>
+                    <span className="text-white small align-self-center">Hoş geldin, {currentUser.fullName}</span>
                     <button className="btn btn-sm text-white border-white" onClick={onLogout}>Çıkış Yap</button>
                 </div>
             </header>
 
             <main className="container-fluid flex-grow-1 p-4 overflow-auto">
 
-                {/* ÜST KONTROL PANELİ */}
                 <div className="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm border">
                     <div className="d-flex align-items-center gap-3">
                         <h1 className="h5 fw-bold text-dark mb-0 me-3">Çizelge Dönemi:</h1>
-                        <select className="form-select form-select-sm fw-bold text-secondary shadow-none border-1" style={{ width: '130px', cursor: 'pointer' }} value={seciliAy} onChange={(e) => { setSeciliAy(parseInt(e.target.value)); setSeciliGunler([]); }}>
-                            {aylar.map(ay => <option key={ay.deger} value={ay.deger}>{ay.ad}</option>)}
+                        <select className="form-select form-select-sm fw-bold text-secondary shadow-none border-1" style={{ width: '130px', cursor: 'pointer' }} value={selectedMonth} onChange={(e) => { setSelectedMonth(parseInt(e.target.value)); setSelectedDays([]); }}>
+                            {months.map(month => <option key={month.value} value={month.value}>{month.name}</option>)}
                         </select>
-                        <select className="form-select form-select-sm fw-bold text-secondary shadow-none border-1" style={{ width: '100px', cursor: 'pointer' }} value={seciliYil} onChange={(e) => { setSeciliYil(parseInt(e.target.value)); setSeciliGunler([]); }}>
-                            {yillar.map(yil => <option key={yil} value={yil}>{yil}</option>)}
+                        <select className="form-select form-select-sm fw-bold text-secondary shadow-none border-1" style={{ width: '100px', cursor: 'pointer' }} value={selectedYear} onChange={(e) => { setSelectedYear(parseInt(e.target.value)); setSelectedDays([]); }}>
+                            {years.map(year => <option key={year} value={year}>{year}</option>)}
                         </select>
 
-                        {/* YENİ: Backend geldiğinde çalışacak filtre butonu */}
                         <div className="vr ms-2 me-2"></div>
                         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 fw-bold">
                             <span>Filtrele (Tüm Ekip)</span>
@@ -90,12 +112,11 @@ export default function DashboardScreen({ onLogout }) {
                         </button>
                     </div>
 
-                    {/* SAĞ ÜST: AKSİYON BUTONLARI */}
                     <div>
                         {!isEditMode ? (
                             <button
                                 className="btn text-white fw-bold shadow-sm px-4"
-                                style={{ backgroundColor: colors.ziraatKirmizi, borderRadius: '8px' }}
+                                style={{ backgroundColor: colors.primaryRed, borderRadius: '8px' }}
                                 onClick={() => setIsEditMode(true)}
                             >
                                 + İzin Planla / Ekle
@@ -104,35 +125,37 @@ export default function DashboardScreen({ onLogout }) {
                             <div className="d-flex gap-2">
                                 <button
                                     className="btn btn-light fw-bold shadow-sm px-3 border"
-                                    style={{ borderRadius: '8px', color: colors.koyuGri }}
-                                    onClick={handleIptal}
+                                    style={{ borderRadius: '8px', color: colors.darkGray }}
+                                    onClick={handleCancel}
                                 >
                                     İptal
                                 </button>
 
-                                {/* YENİ: Planlanan Olarak Ekle (Turuncu) */}
                                 <button
                                     className="btn text-dark fw-bold shadow-sm px-3"
                                     style={{
-                                        backgroundColor: seciliGunler.length > 0 ? '#ffc107' : '#e9ecef',
+                                        backgroundColor: selectedDays.length > 0 ? '#ffc107' : '#e9ecef',
                                         borderRadius: '8px',
-                                        cursor: seciliGunler.length > 0 ? 'pointer' : 'not-allowed',
+                                        cursor: selectedDays.length > 0 ? 'pointer' : 'not-allowed',
                                         border: '1px solid #ffc107'
                                     }}
-                                    disabled={seciliGunler.length === 0}
+                                    disabled={selectedDays.length === 0}
+                                    
+                                    onClick={() => handleSaveLeaves('Planned')}
                                 >
                                     Planlanan Ekle
                                 </button>
 
-                                {/* YENİ: Kesinleştir (Ziraat Kırmızı - Ana Aksiyon) */}
                                 <button
                                     className="btn text-white fw-bold shadow-sm px-4"
                                     style={{
-                                        backgroundColor: seciliGunler.length > 0 ? colors.ziraatKirmizi : '#6c757d',
+                                        backgroundColor: selectedDays.length > 0 ? colors.primaryRed : '#6c757d',
                                         borderRadius: '8px',
-                                        cursor: seciliGunler.length > 0 ? 'pointer' : 'not-allowed'
+                                        cursor: selectedDays.length > 0 ? 'pointer' : 'not-allowed'
                                     }}
-                                    disabled={seciliGunler.length === 0}
+                                    disabled={selectedDays.length === 0}
+
+                                    onClick={() => handleSaveLeaves('Approved')}
                                 >
                                     Kesinleştir
                                 </button>
@@ -141,34 +164,33 @@ export default function DashboardScreen({ onLogout }) {
                     </div>
                 </div>
 
-                {/* TABLO */}
                 <div className="card shadow-sm border-0" style={{ borderRadius: '15px', overflow: 'hidden' }}>
                     <div className="table-responsive">
                         <table className="table table-bordered mb-0" style={{ fontSize: '13px' }}>
 
-                            <thead style={{ backgroundColor: colors.acikGri, color: colors.koyuGri }}>
+                            <thead style={{ backgroundColor: colors.lightGray, color: colors.darkGray }}>
                                 <tr>
-                                    <th className="px-3 align-middle" style={{ minWidth: '150px' }}>Personel Ad Soyad</th>
+                                    <th className="px-3 align-middle" style={{ minWidth: '150px' }}>Çalışan Ad Soyad</th>
 
-                                    {gunler.map(gun => {
-                                        const gercekTarih = new Date(seciliYil, seciliAy - 1, gun);
-                                        const haftaninGunu = gercekTarih.getDay();
-                                        const haftaSonuMu = haftaninGunu === 0 || haftaninGunu === 6;
-                                        const gunAdi = gunIsimleri[haftaninGunu];
-                                        const bugunMu = (seciliYil === gercekYil && seciliAy === gercekAy && gun === gercekGun);
+                                    {days.map(day => {
+                                        const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+                                        const dayOfWeek = actualDate.getDay();
+                                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                                        const dayName = dayNames[dayOfWeek];
+                                        const isToday = (selectedYear === currentYear && selectedMonth === currentMonth && day === currentDay);
 
                                         return (
-                                            <th key={gun} className="text-center p-1" style={{ minWidth: '40px', backgroundColor: haftaSonuMu ? '#e9ecef' : 'transparent', color: haftaSonuMu ? '#dc3545' : colors.koyuGri }}>
-                                                <div style={{ fontSize: '10px', fontWeight: 'bold', color: bugunMu ? colors.ziraatKirmizi : (haftaSonuMu ? '#dc3545' : '#6c757d'), marginBottom: '2px' }}>
-                                                    {gunAdi}
+                                            <th key={day} className="text-center p-1" style={{ minWidth: '40px', backgroundColor: isWeekend ? '#e9ecef' : 'transparent', color: isWeekend ? '#dc3545' : colors.darkGray }}>
+                                                <div style={{ fontSize: '10px', fontWeight: 'bold', color: isToday ? colors.primaryRed : (isWeekend ? '#dc3545' : '#6c757d'), marginBottom: '2px' }}>
+                                                    {dayName}
                                                 </div>
-                                                {bugunMu ? (
-                                                    <div className="mx-auto d-flex justify-content-center align-items-center rounded-circle shadow-sm" style={{ backgroundColor: colors.ziraatKirmizi, color: 'white', width: '24px', height: '24px', fontSize: '13px' }}>
-                                                        {gun}
+                                                {isToday ? (
+                                                    <div className="mx-auto d-flex justify-content-center align-items-center rounded-circle shadow-sm" style={{ backgroundColor: colors.primaryRed, color: 'white', width: '24px', height: '24px', fontSize: '13px' }}>
+                                                        {day}
                                                     </div>
                                                 ) : (
                                                     <div className="fw-bold" style={{ fontSize: '13px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        {gun}
+                                                        {day}
                                                     </div>
                                                 )}
                                             </th>
@@ -178,62 +200,55 @@ export default function DashboardScreen({ onLogout }) {
                             </thead>
 
                             <tbody>
-                                {personeller.map(p => {
-                                    const benimSatirimMi = p.id === aktifKullanici.id;
+                                {staffList.map(person => {
+                                    const isCurrentUser = person.id === currentUser.id;
 
                                     return (
-                                        <tr key={p.id}>
-                                            <td className="fw-medium px-3 align-middle text-dark bg-white">{p.adSoyad}</td>
+                                        <tr key={person.id}>
+                                            <td className="fw-medium px-3 align-middle text-dark bg-white">{person.fullName}</td>
 
-                                            {gunler.map(gun => {
-                                                const gercekTarih = new Date(seciliYil, seciliAy - 1, gun);
-                                                const haftaninGunu = gercekTarih.getDay();
-                                                const haftaSonuMu = haftaninGunu === 0 || haftaninGunu === 6;
-                                                const gecmisMi = seciliYil < gercekYil || (seciliYil === gercekYil && seciliAy < gercekAy) || (seciliYil === gercekYil && seciliAy === gercekAy && gun < gercekGun);
+                                            {days.map(day => {
+                                                const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+                                                const dayOfWeek = actualDate.getDay();
+                                                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                                                const isPast = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth) || (selectedYear === currentYear && selectedMonth === currentMonth && day < currentDay);
 
-                                                // Bu gün için veritabanında kayıtlı bir izin var mı?
-                                                const kayitliIzin = p.izinler?.find(i => i.gun === gun);
-                                                // Kullanıcı şu an bu günü seçiyor mu?
-                                                const suAnSeciliyorMu = benimSatirimMi && seciliGunler.includes(gun);
+                                                const existingLeave = person.leaves?.find(l => l.day === day);
+                                                const isCurrentlySelected = isCurrentUser && selectedDays.includes(day);
 
                                                 let bgColor = '#ffffff';
                                                 let bgPattern = 'none';
                                                 let textColor = 'inherit';
 
-                                                // RENK HİYERARŞİSİ
-                                                if (haftaSonuMu) {
+                                                if (isWeekend) {
                                                     bgColor = '#e9ecef';
-                                                } else if (suAnSeciliyorMu) {
-                                                    // Kullanıcı tıklarken mavi renk olsun (Seçim aşaması)
+                                                } else if (isCurrentlySelected) {
                                                     bgColor = '#0d6efd';
                                                     textColor = 'white';
-                                                } else if (kayitliIzin) {
-                                                    // Veritabanından gelen renkler
-                                                    if (kayitliIzin.durum === 'Kesinlesen') {
-                                                        bgColor = '#198754'; // Kesin yeşil
+                                                } else if (existingLeave) {
+                                                    if (existingLeave.status === 'Approved') {
+                                                        bgColor = '#59f7ad'; 
                                                         textColor = 'white';
-                                                    } else if (kayitliIzin.durum === 'Planlanan') {
-                                                        bgColor = '#ffc107'; // Planlanan turuncu/sarı
+                                                    } else if (existingLeave.status === 'Planned') {
+                                                        bgColor = '#ffd659'; 
                                                         textColor = '#000';
                                                     }
                                                 }
 
-                                                // GEÇMİŞ KONTROLÜ (Deseni üste bindir)
-                                                if (gecmisMi && !haftaSonuMu) {
+                                                if (isPast && !isWeekend) {
                                                     bgPattern = 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)';
                                                 }
 
-                                                // İMLEÇ (CURSOR) MANTIĞI
                                                 let cursorStyle = 'default';
-                                                if (isEditMode && benimSatirimMi) {
-                                                    if (gecmisMi || haftaSonuMu || kayitliIzin) cursorStyle = 'not-allowed';
+                                                if (isEditMode && isCurrentUser) {
+                                                    if (isPast || isWeekend || existingLeave) cursorStyle = 'not-allowed';
                                                     else cursorStyle = 'pointer';
                                                 }
 
                                                 return (
                                                     <td
-                                                        key={gun}
-                                                        onClick={() => benimSatirimMi && handleHucreTikla(gun, gecmisMi, haftaSonuMu, !!kayitliIzin)}
+                                                        key={day}
+                                                        onClick={() => isCurrentUser && handleCellClick(day, isPast, isWeekend, !!existingLeave)}
                                                         className="text-center align-middle p-0 border-end"
                                                         style={{
                                                             height: '40px',
@@ -244,7 +259,7 @@ export default function DashboardScreen({ onLogout }) {
                                                             transition: 'all 0.2s ease-in-out'
                                                         }}
                                                     >
-                                                        {(suAnSeciliyorMu || kayitliIzin) && <span className="fw-bold">✓</span>}
+                                                        {(isCurrentlySelected || existingLeave) && <span className="fw-bold">✓</span>}
                                                     </td>
                                                 );
                                             })}
