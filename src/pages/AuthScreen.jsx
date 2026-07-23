@@ -11,7 +11,29 @@ export default function AuthScreen({ onLogin }) {
     const [regSurname, setRegSurname] = useState('');
     const [regEmail, setRegEmail] = useState('');
     const [regPassword, setRegPassword] = useState('');
-    const [regPasswordConfirm, setRegPasswordConfirm] = useState(''); // Şifre doğrulama için eklendi
+    const [regPasswordConfirm, setRegPasswordConfirm] = useState('');
+
+    const [showPassword, setShowPassword] = useState(false);
+    const [showRegPassword, setShowRegPassword] = useState(false);
+    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
+    const EyeIcon = () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-eye" viewBox="0 0 16 16">
+            <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/>
+            <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>
+        </svg>  
+    );
+
+    const EyeSlashIcon = () => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-eye-slash" viewBox="0 0 16 16">
+            <path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/>
+            <path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299-.822-.822a2.5 2.5 0 0 1-2.829-2.829l-.823-.823a3.5 3.5 0 0 0 4.474 4.474z"/>
+            <path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l-.195-.288C1.878 6.668 3.638 5.5 5.758 5.5c.713 0 1.39.133 2.02.36l-.708.708z"/>
+            <path d="M1.646 1.646a.5.5 0 0 1 .708 0l12 12a.5.5 0 0 1-.708.708l-12-12a.5.5 0 0 1 0-.708z"/>
+        </svg>
+         //   <path d="M10.428 10.428l1.414 1.414a.5.5 0 0 0 .707-.707l-1.414-1.414a.5.5 0 1 0-.707.707M1.214 2.214a.5.5 0 1 0-.707-.707L14.786 14.786a.5.5 0 1 0 .707.707z"/>
+        
+    );
 
     const colors = {
         ziraatKirmizi: '#E10514',
@@ -117,14 +139,35 @@ export default function AuthScreen({ onLogin }) {
                         </div>
                         <div className="mb-3">
                             <label className="form-label fw-bold small text-dark">Şifre</label>
-                            <input
-                                type="password"
-                                className="form-control py-2 border-1 shadow-none"
-                                style={{ backgroundColor: colors.acikGri, borderColor: colors.bordurGri }}
-                                placeholder="şifre"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type={isPasswordVisible ? 'text' : 'password'}
+                                    className="form-control py-2 border-1 shadow-none"
+                                    style={{ 
+                                        backgroundColor: colors.acikGri, borderColor: colors.bordurGri, paddingRight: '40px' 
+                                    }}
+
+                                    placeholder="şifre"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsPasswordVisible(true);
+                                        setTimeout(() => {
+                                            setIsPasswordVisible(false);
+                                         }, 2000); // 2 saniye sonra şifreyi gizle
+                                    }}
+
+                                    style={{
+                                        position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: colors.koyuGri, display : 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                    title={'Şifreyi Göster'}
+                                >
+                                    {isPasswordVisible ? <EyeSlashIcon /> : <EyeIcon />}
+                                </button>
+                            </div>
                         </div>
                         <button
                             type="button"

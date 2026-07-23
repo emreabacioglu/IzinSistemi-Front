@@ -47,11 +47,11 @@ export default function DashboardScreen({ user, onLogout }) {
     const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
     const currentMonthLeaves = leaves.filter(leave => {
-        const leaveDate = new Date(leave.date);
+        const leaveDate = new Date(leave.startDate);
         return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
     })
     .map(leave => ({
-        day: new Date(leave.date).getDate(),
+        day: new Date(leave.startDate).getDate(),
         status: leave.status
     }));
 
@@ -76,6 +76,35 @@ export default function DashboardScreen({ user, onLogout }) {
     const handleCancel = () => {
         setIsEditMode(false);
         setSelectedDays([]);
+    };
+
+    const handleSaveLeaves = async (status) => {
+        if (selectedDays.length === 0) return;
+
+        try {
+            const leaveRequests = selectedDays.map(day => {
+                const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                return api.post('/Leave', {
+                    employeeId: user.id,
+                    startDate: leaveDate,
+                    endDate: leaveDate,
+                    requestDate: new Date().toISOString(),
+                    status: status
+                });
+            });
+
+            await Promise.all(leaveRequests);
+
+            alert(`${status === 'Planned' ? 'Planlanan' : 'Kesinleştirilen'} izinler başarıyla kaydedildi.`);
+
+            await fetchLeaves();
+            setIsEditMode(false);
+            setSelectedDays([]);
+        } catch (error) {
+            console.error('İzin kaydedilirken hata oluştu:', error);
+            alert('İzin kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.');
+        }
     };
 
     if (!currentUser) {
@@ -119,7 +148,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                 style={{ backgroundColor: colors.primaryRed, borderRadius: '8px' }}
                                 onClick={() => setIsEditMode(true)}
                             >
-                                + İzin Planla / Ekle
+                                + İzin Planla
                             </button>
                         ) : (
                             <div className="d-flex gap-2">
