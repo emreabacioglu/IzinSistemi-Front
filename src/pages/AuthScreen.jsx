@@ -73,6 +73,16 @@ export default function AuthScreen({ onLogin }) {
         }
     };
 
+    const handleLogin = (e) => {
+        e.preventDefault();
+
+        if (!email || !password) {
+            alert('Lütfen e-posta ve şifre alanlarını doldurun.');
+            return;
+        }     
+        onLogin(email, password);
+    };
+
     return (
         <div
             className="d-flex justify-content-center align-items-center vh-100 px-3"
@@ -125,7 +135,7 @@ export default function AuthScreen({ onLogin }) {
 
                 {/* GİRİŞ YAP FORMU */}
                 {isLogin ? (
-                    <form>
+                    <form onSubmit={handleLogin}>
                         <div className="mb-3">
                             <label className="form-label fw-bold small text-dark">E-posta Adresi</label>
                             <input
@@ -170,10 +180,9 @@ export default function AuthScreen({ onLogin }) {
                             </div>
                         </div>
                         <button
-                            type="button"
+                            type="submit"
                             className="btn w-100 fw-bold py-2 shadow-sm mt-3"
                             style={{ backgroundColor: colors.ziraatKirmizi, color: '#FFFFFF', borderRadius: '8px' }}
-                            onClick={() => onLogin(email, password)}
                         >
                             Sisteme Giriş Yap
                         </button>

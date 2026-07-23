@@ -5,16 +5,28 @@ import api from './api';
 import AuthScreen from './pages/AuthScreen';
 import DashboardScreen from './pages/DashboardScreen';
 
-
-
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [user, setUser] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+            setUser(JSON.parse(savedUser));
+            setIsLoggedIn(true);
+        }
+        setIsLoading(false);
+    }, []);
 
     const handleLogin = async (email, password) => {
         try {
             const response = await api.post('/Employee/Login', { email, password });
             if (response.status === 200) {
+
+                const loggedInUser = response.data;
+                localStorage.setItem('user', JSON.stringify(loggedInUser));
+
                 setUser(response.data);
                 setIsLoggedIn(true);
             }
@@ -23,6 +35,16 @@ export default function App() {
             alert('Giriş başarısız. Lütfen bilgilerinizi kontrol edin.');
         }
     };
+
+    const handleLogout = () => {
+        localStorage.removeItem('user');
+        setUser(null);
+        setIsLoggedIn(false);
+    }
+
+    if (isLoading) {
+        return <div className="d-flex justify-content-center align-items-center vh-100">Son oturumunuz açılıyor...</div>;
+    }
 
     return (
         <BrowserRouter>

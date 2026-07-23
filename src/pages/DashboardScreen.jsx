@@ -143,13 +143,22 @@ export default function DashboardScreen({ user, onLogout }) {
 
                     <div>
                         {!isEditMode ? (
-                            <button
-                                className="btn text-white fw-bold shadow-sm px-4"
-                                style={{ backgroundColor: colors.primaryRed, borderRadius: '8px' }}
-                                onClick={() => setIsEditMode(true)}
-                            >
-                                + İzin Planla
-                            </button>
+                            <div className="d-flex gap-2">
+                                <button
+                                    className="btn text-white fw-bold shadow-sm px-4"
+                                    style={{ backgroundColor: colors.primaryRed, borderRadius: '8px', width: '153px' }}
+                                    onClick={() => setIsEditMode(true)}
+                                >
+                                    + İzin Planla
+                                </button>
+                                <button
+                                    className="btn text-white fw-bold shadow-sm px-4"
+                                    style={{ backgroundColor: colors.primaryRed, borderRadius: '8px', width: '153px' }}
+                                    onClick={() => alert('Düzenleme menüsü açılacak')}
+                                >
+                                    - İzin Düzenle
+                                </button>
+                            </div>
                         ) : (
                             <div className="d-flex gap-2">
                                 <button
