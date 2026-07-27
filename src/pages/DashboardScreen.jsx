@@ -50,10 +50,19 @@ export default function DashboardScreen({ user, onLogout }) {
         const leaveDate = new Date(leave.startDate);
         return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
     })
-    .map(leave => ({
-        day: new Date(leave.startDate).getDate(),
-        status: leave.status
-    }));
+    .map(leave => {
+
+        let standardizedStatus = leave.status;
+        if (standardizedStatus === 'Planned') standardizedStatus = 'Planlanan';
+        if (standardizedStatus === 'Approved') standardizedStatus = 'Kesinleşen';
+        //if (standardizedStatus === 'Cancelled') standardizedStatus = 'İptal Edilen';
+    
+        return {
+            id: leave.id,
+            day: new Date(leave.startDate).getDate(),
+            status: standardizedStatus
+        };
+    });
 
     const currentUser = user ? {
         id: user.id,
@@ -63,14 +72,39 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const staffList = currentUser ? [currentUser] : [];
 
-    const handleCellClick = (day, isPast, isWeekend, hasExistingLeave) => {
-        if (!isEditMode || isPast || isWeekend || hasExistingLeave) return;
+    const handleCellClick = (day, isPast, isWeekend, clickedStatus) => {
+        if (!isEditMode || isPast || isWeekend) return;
 
         if (selectedDays.includes(day)) {
             setSelectedDays(selectedDays.filter(d => d !== day));
-        } else {
-            setSelectedDays([...selectedDays, day]);
+            return;
         }
+        
+        let currentHasEmpty = false;
+        let currentHasConfirmed = false;
+        let currentHasPlanned = false;
+
+        selectedDays.forEach(selectedDay => {
+            const cell = currentMonthLeaves.find(l => l.day === selectedDay);
+
+            if (!cell || (cell && (cell.status === null || cell.status === undefined))) currentHasEmpty = true;
+            if (cell && cell.status === 'Kesinleşen') currentHasConfirmed = true;
+            if (cell && cell.status === 'Planlanan') currentHasPlanned = true;
+        });
+
+        const isClickedEmpty = !clickedStatus;
+        const isClickedConfirmed = clickedStatus === 'Kesinleşen';
+
+        if (currentHasEmpty && isClickedConfirmed) {
+            alert('Boş günler ile Kesinleşen izinler aynı anda seçilemez.');
+            return;
+        }
+
+        if (currentHasConfirmed && isClickedEmpty) {
+            alert('Kesinleşen izin ile boş günler aynı anda seçilemez.');
+            return;
+        }
+        setSelectedDays([...selectedDays, day]);
     };
 
     const handleCancel = () => {
@@ -96,7 +130,7 @@ export default function DashboardScreen({ user, onLogout }) {
 
             await Promise.all(leaveRequests);
 
-            alert(`${status === 'Planned' ? 'Planlanan' : 'Kesinleştirilen'} izinler başarıyla kaydedildi.`);
+            alert(`${status === 'Planned' ? 'Planlanan' : 'Kesinleşen'} izinler başarıyla kaydedildi.`);
 
             await fetchLeaves();
             setIsEditMode(false);
@@ -110,6 +144,84 @@ export default function DashboardScreen({ user, onLogout }) {
     if (!currentUser) {
         return <div className="d-flex justify-content-center align-items-center vh-100">Kullanıcı bilgileri yükleniyor...</div>;
     }
+
+    const getSelectionActions = () => {
+        let hasEmpty = false;
+        let hasPlanned = false;
+        let hasConfirmed = false;
+
+        selectedDays.forEach(day => {
+            const cell = currentMonthLeaves.find(l => l.day === day);
+
+            if (!cell || (cell && (cell.status === null || cell.status === undefined))){
+                hasEmpty = true;
+            }
+            if (cell && cell.status === 'Planlanan') hasPlanned = true;
+            if (cell && cell.status === 'Kesinleşen') hasConfirmed = true;
+        });
+        
+        const canPlan = hasEmpty && !hasPlanned && !hasConfirmed;
+        const canConfirm = !hasConfirmed && (hasPlanned || hasEmpty);
+        const canCancel = !hasEmpty && (hasPlanned || hasConfirmed);
+
+        return { canPlan, canConfirm, canCancel };
+    };
+    const { canPlan, canConfirm, canCancel } = getSelectionActions();
+
+    const handleUpdateStatus = async (newStatus) => {
+        if (selectedDays.length === 0) return;
+
+        try {
+            const request = selectedDays.map(day => {
+                const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                return api.post('/Leave', {
+                    employeeId: user.id,
+                    startDate: leaveDate,
+                    endDate: leaveDate,
+                    requestDate: new Date().toISOString(),
+                    status:newStatus
+                });
+            });
+
+            await Promise.all(request);
+
+            await fetchLeaves();
+
+            setSelectedDays([]);
+            setIsEditMode(false);
+
+        } catch (error) {
+            console.error(`${newStatus} status update failed:`, error);
+            alert('Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyiniz.')
+        }
+    };
+
+    const handleDeleteLeaves = async () => {
+        if (selectedDays.length === 0) return;
+
+        try {
+            const deleteRequest = selectedDays.map(day => {
+                const leaveToDelete = currentMonthLeaves.find(l => l.day === day);
+
+                if (leaveToDelete && leaveToDelete.id){
+                    return api.delete(`/Leave/${leaveToDelete.id}`);
+                }
+                return Promise.resolve();
+            });
+
+            await Promise.all(deleteRequest);
+
+            await fetchLeaves();
+
+            setSelectedDays([]);
+            setIsEditMode(false);
+
+        } catch (error) {
+            console.error('Leave deletion failed:', error);
+            alert('İzinler iptal edilirken bir hata oluştu.')
+        }
+    };
 
     return (
         <div className="container-fluid p-0 vh-100 d-flex flex-column" style={{ backgroundColor: '#F0F2F5' }}>
@@ -146,56 +258,49 @@ export default function DashboardScreen({ user, onLogout }) {
                             <div className="d-flex gap-2">
                                 <button
                                     className="btn text-white fw-bold shadow-sm px-4"
-                                    style={{ backgroundColor: colors.primaryRed, borderRadius: '8px', width: '153px' }}
+                                    style={{ backgroundColor: colors.primaryRed, borderRadius: '8px'}}
                                     onClick={() => setIsEditMode(true)}
                                 >
-                                    + İzin Planla
-                                </button>
-                                <button
-                                    className="btn text-white fw-bold shadow-sm px-4"
-                                    style={{ backgroundColor: colors.primaryRed, borderRadius: '8px', width: '153px' }}
-                                    onClick={() => alert('Düzenleme menüsü açılacak')}
-                                >
-                                    - İzin Düzenle
+                                    İzin Ekle / Düzenle
                                 </button>
                             </div>
-                        ) : (
-                            <div className="d-flex gap-2">
+                        ):(
+                            <div className="d-flex gap-2 align-items-center">
+                                <span className="text-muted small fw-bold me-2">
+                                    Seçili Günler: {selectedDays.length}
+                                </span>
                                 <button
-                                    className="btn btn-light fw-bold shadow-sm px-3 border"
-                                    style={{ borderRadius: '8px', color: colors.darkGray }}
-                                    onClick={handleCancel}
+                                    className="btn btn-warning fw-bold shadow-sm"
+                                    disabled={!canPlan}
+                                    onClick={() => handleUpdateStatus('Planlanan')}
                                 >
-                                    İptal
+                                    Planla 
                                 </button>
-
+                                
                                 <button
-                                    className="btn text-dark fw-bold shadow-sm px-3"
-                                    style={{
-                                        backgroundColor: selectedDays.length > 0 ? '#ffc107' : '#e9ecef',
-                                        borderRadius: '8px',
-                                        cursor: selectedDays.length > 0 ? 'pointer' : 'not-allowed',
-                                        border: '1px solid #ffc107'
-                                    }}
-                                    disabled={selectedDays.length === 0}
-                                    
-                                    onClick={() => handleSaveLeaves('Planned')}
-                                >
-                                    Planlanan Ekle
-                                </button>
-
-                                <button
-                                    className="btn text-white fw-bold shadow-sm px-4"
-                                    style={{
-                                        backgroundColor: selectedDays.length > 0 ? colors.primaryRed : '#6c757d',
-                                        borderRadius: '8px',
-                                        cursor: selectedDays.length > 0 ? 'pointer' : 'not-allowed'
-                                    }}
-                                    disabled={selectedDays.length === 0}
-
-                                    onClick={() => handleSaveLeaves('Approved')}
+                                    className="btn btn-success fw-bold shadow-sm"
+                                    disabled={!canConfirm}
+                                    onClick={() => handleUpdateStatus('Kesinleşen')}
                                 >
                                     Kesinleştir
+                                </button>
+
+                                <button
+                                    className="btn btn-danger fw-bold shadow-sm"
+                                    disabled={!canCancel}
+                                    onClick={() => handleDeleteLeaves()}
+                                >
+                                    İptal Et
+                                </button>
+
+                                <button
+                                    className="btn btn-outline-secondary fw-bold shadow-sm"
+                                    onClick={() => {
+                                        setIsEditMode(false);
+                                        setSelectedDays([]);
+                                    }}
+                                >
+                                    Vazgeç
                                 </button>
                             </div>
                         )}
@@ -260,14 +365,11 @@ export default function DashboardScreen({ user, onLogout }) {
 
                                                 if (isWeekend) {
                                                     bgColor = '#e9ecef';
-                                                } else if (isCurrentlySelected) {
-                                                    bgColor = '#0d6efd';
-                                                    textColor = 'white';
                                                 } else if (existingLeave) {
-                                                    if (existingLeave.status === 'Approved') {
+                                                    if (existingLeave.status === 'Kesinleşen') {
                                                         bgColor = '#59f7ad'; 
                                                         textColor = 'white';
-                                                    } else if (existingLeave.status === 'Planned') {
+                                                    } else if (existingLeave.status === 'Planlanan') {
                                                         bgColor = '#ffd659'; 
                                                         textColor = '#000';
                                                     }
@@ -279,14 +381,14 @@ export default function DashboardScreen({ user, onLogout }) {
 
                                                 let cursorStyle = 'default';
                                                 if (isEditMode && isCurrentUser) {
-                                                    if (isPast || isWeekend || existingLeave) cursorStyle = 'not-allowed';
+                                                    if (isPast || isWeekend) cursorStyle = 'not-allowed';
                                                     else cursorStyle = 'pointer';
                                                 }
 
                                                 return (
                                                     <td
                                                         key={day}
-                                                        onClick={() => isCurrentUser && handleCellClick(day, isPast, isWeekend, !!existingLeave)}
+                                                        onClick={() => isCurrentUser && handleCellClick(day, isPast, isWeekend, existingLeave?.status)}
                                                         className="text-center align-middle p-0 border-end"
                                                         style={{
                                                             height: '40px',
@@ -297,7 +399,9 @@ export default function DashboardScreen({ user, onLogout }) {
                                                             transition: 'all 0.2s ease-in-out'
                                                         }}
                                                     >
-                                                        {(isCurrentlySelected || existingLeave) && <span className="fw-bold">✓</span>}
+                                                        {isEditMode && isCurrentlySelected && (
+                                                            <span className="fw-bold text-dark" style={{ fontSize: '1.25rem' }}>✓</span>
+                                                        )}
                                                     </td>
                                                 );
                                             })}
