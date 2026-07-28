@@ -14,6 +14,32 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const [leaves, setLeaves] = useState([]);
 
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [modalStep, setModalStep] = useState(1);
+
+    const [selectedDept, setSelectedDept] = useState('');
+    const [selectedTitle, setSelectedTitle] = useState('');
+
+    const [totalLeaveDays, setTotalLeaveDays] = useState(14);
+    //const [leaveResetDay, setLeaveResetDay] = useState('');
+    const [leaveResetMonth, setLeaveResetMonth] = useState('');
+    //const [birthDay, setBirthDay] = useState('');
+    const [birthMonth, setBirthMonth] = useState('');
+
+    const [leaveResetDate, setLeaveResetDate] = useState(''); 
+    const [birthDate, setBirthDate] = useState('');
+
+    const [isProfileSetupDone, setIsProfileSetupDone] = useState(false);
+
+    const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
+
+    const getDaysForMonth = (monthValue) => {
+        if (!monthValue) return 31;
+        const m = parseInt(monthValue, 10);
+        if (m === 2) return 29;
+        if ([4, 6, 9, 11].includes(m)) return 30;
+        return 31;
+    };
 
     const fetchLeaves = async () => {
         if (!user || !user.id) return;
@@ -154,6 +180,7 @@ export default function DashboardScreen({ user, onLogout }) {
     if (!currentUser) {
         return <div className="d-flex justify-content-center align-items-center vh-100">Kullanıcı bilgileri yükleniyor...</div>;
     }
+    
 
     const getSelectionActions = () => {
         let hasEmpty = false;
@@ -234,6 +261,28 @@ export default function DashboardScreen({ user, onLogout }) {
             console.error('Leave deletion failed:', error);
             alert('İzinler iptal edilirken bir hata oluştu.')
         }
+    };
+
+    useEffect(() => {
+        if (user && (user.department === 'Belirtilmedi' || !user.department) && !isProfileSetupDone) {
+            setShowProfileModal(true);
+        }
+    }, [user, isProfileSetupDone]);
+
+    const handleCompleteProfile = async (e) => {
+        if(e) e.preventDefault();
+
+        if(modalStep === 1){
+            if (!selectedDept || !selectedTitle) {
+                alert("Devam etmek için departman ve unvan seçimini yapınız.");
+                return;
+            }
+        }
+
+        //backend kısmı
+
+        setIsProfileSetupDone(true);
+        setShowProfileModal(false);
     };
 
     return (
@@ -442,6 +491,159 @@ export default function DashboardScreen({ user, onLogout }) {
                 </div>
 
             </main>
-        </div>
+
+        {showProfileModal && (
+            <div
+            className='position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center'
+            style={{
+                backgroundColor: 'rgba(30, 33, 36, 0.4)', 
+                backdropFilter: 'blur(10px)',             
+                zIndex: 9999 
+            }}
+        >
+            <div
+                className='card border-0 p-4 p-md-5 shadow-lg'
+                style={{ maxWidth: '500px', width: '100%', borderRadius: '16px', backgroundColor: '#FFFFFF'}}
+                >
+                    <div className="text-center mb-4">
+                        <div className='d-flex justify-content align-items-center gap-2 mb-2'>
+                            <span className={`badge ${modalStep === 1 ? 'bg-danger' : 'bg-secondary'}`} style={{ borderRadius: '12px' }}>1. Adım</span>
+                            <span className="text-muted small">➔</span>
+                            <span className={`badge ${modalStep === 2 ? 'bg-danger' : 'bg-secondary'}`} style={{ borderRadius: '12px' }}>2. Adım</span>
+                        </div>
+
+                        <h3 className='fw-bold mb-1'
+                        style={{color: '#2C3238'}}>
+                            Hoş geldin, {currentUser?.fullName}! 🎉
+                        </h3>
+                        <p className='text-muted small mb-0'>
+                            {modalStep === 1
+                            ? 'Sistemi kullanmaya başlamadan önce zorunlu alamnları doldurunuz.'
+                            : 'Bütün özelliklerden faydalanabilmeniz için son bir adım kaldı.'}
+                        </p>
+                    </div>
+
+                    {modalStep === 1 &&(
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!selectedDept || !selectedTitle){
+                                alert("Lütfen Departman ve Ünvan Seçimi Yapınız.");
+                                return;
+                            }
+                            setModalStep(2);
+
+                        }}>
+                            
+                            <h6 className="fw-bold mb-3" style={{ color: '#E10514' }}>Kurum Bilgileri (Zorunlu)</h6>
+                                
+                            <div className="mb-3">
+                                <label className="form-label fw-bold small text-dark">Departmanınız</label>
+                                <select 
+                                    className="form-select shadow-none border-1 py-2"
+                                    style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                    value={selectedDept}
+                                    onChange={(e) => setSelectedDept(e.target.value)}
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    <option value="Bilgi Teknolojileri">Bilgi Teknolojileri (IT)</option>
+                                    <option value="İnsan Kaynakları">İnsan Kaynakları</option>
+                                    <option value="Muhasebe ve Finans">Muhasebe ve Finans</option>
+                                    <option value="Satış ve Pazarlama">Satış ve Pazarlama</option>
+                                    <option value="Operasyon">Operasyon</option>
+                                </select>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="form-label fw-bold small text-dark">Unvanınız</label>
+                                <select 
+                                    className="form-select shadow-none border-1 py-2"
+                                    style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                    value={selectedTitle}
+                                    onChange={(e) => setSelectedTitle(e.target.value)}
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    <option value="Junior Uzman">Junior Uzman</option>
+                                    <option value="Uzman">Uzman</option>
+                                    <option value="Kıdemli Uzman">Kıdemli Uzman (Senior)</option>
+                                    <option value="Takım Lideri">Takım Lideri</option>
+                                    <option value="Yönetici / Müdür">Yönetici / Müdür</option>
+                                </select>
+                            </div>
+
+                            <button
+                                type='submit'
+                                className='btn w-100 fw-bold py-3 shadow-sm mt-2'
+                                style={{ backgroundColor: '#E10514', color: '#FFFFFF', borderRadius: '8px'}}
+                            >
+                                Devam Et
+
+                            </button>
+                        </form>
+                    )}
+
+                    {modalStep === 2 && (
+                        <form onSubmit={handleCompleteProfile}>
+                            <h6 className="fw-bold mb-3 text-muted">İzin Hakları & Kişiselleştirme (Opsiyonel)</h6>
+                            <div className="row mb-3">
+                                <div className="col-12 col-md-5 mb-3 mb-md-0">
+                                    <label className="form-label fw-bold small text-dark">Yıllık İzin Hakkı</label>
+                                    <input type="number" min="0" max="365" className="form-control shadow-none border-1 py-2 fw-bold text-center" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={totalLeaveDays} onChange={(e) => setTotalLeaveDays(e.target.value)} />
+                                </div>
+                                <div className="col-12 col-md-7">
+                                    <label className="form-label fw-bold small text-dark">İzin Yenilenme Tarihi</label>
+                                    <div className="d-flex gap-2">
+                                        <select 
+                                            className="form-select shadow-none border-1 py-2"
+                                            style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                            value={leaveResetDate}
+                                            onChange={(e) => setLeaveResetDate(e.target.value)}
+                                        >
+                                            <option value="">Gün</option>
+                                            {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                        </select>
+                                        <select 
+                                            className="form-select shadow-none border-1 py-2"
+                                            style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                            value={leaveResetMonth}
+                                            onChange={(e) => setLeaveResetMonth(e.target.value)}
+                                        >
+                                            <option value="">Ay</option>
+                                            {months.map(m => <option key={m.value} value={m.value}>{m.name}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="form-label fw-bold small text-dark">Doğum Günü (Sürprizler için 🎉)</label>
+                                <div className="d-flex gap-2">
+                                    <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6', width: '120px' }} value={birthDate} onChange={(e) => setBirthDate(e.target.value)}>
+                                        <option value="">Gün</option>
+                                        {/* Dinamik Gün Sayısı: */}
+                                        {Array.from({ length: getDaysForMonth(birthMonth) }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                    <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={birthMonth} onChange={(e) => {
+                                            setBirthMonth(e.target.value);
+                                            // Ay değiştiğinde gün limiti aşılırsa günü sıfırla
+                                            if (birthDate > getDaysForMonth(e.target.value)) setBirthDate('');
+                                        }}>
+                                        <option value="">Ay</option>
+                                        {months.map(m => <option key={m.value} value={m.value}>{m.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="submit" className="btn w-100 fw-bold py-3 shadow-sm mb-2" style={{ backgroundColor: '#E10514', color: '#FFFFFF', borderRadius: '8px' }}>
+                                Profili Tamamla ve Başla
+                            </button>
+                            <button type="button" className="btn btn-link w-100 text-decoration-none text-muted small fw-bold" onClick={handleCompleteProfile}>
+                                Bu Adımı Atla (Varsayılan Ayarlarla Başla)
+                            </button>
+                        </form>
+                    )}
+                </div>
+            </div>
+
+        )}
+
+    </div>
     );
 }
