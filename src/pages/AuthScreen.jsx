@@ -3,6 +3,9 @@ import api from '../api';
 
 export default function AuthScreen({ onLogin }) {
     const [isLogin, setIsLogin] = useState(true);
+
+    const [regStep, setRegStep] = useState(1);
+    const [otp, setOtp] = useState(['','','','','',''])
     
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -14,7 +17,7 @@ export default function AuthScreen({ onLogin }) {
     const [regPasswordConfirm, setRegPasswordConfirm] = useState('');
 
     const [showPassword, setShowPassword] = useState(false);
-    const [showRegPassword, setShowRegPassword] = useState(false);
+    //const [showRegPassword, setShowRegPassword] = useState(false);
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
     const EyeIcon = () => (
@@ -42,7 +45,9 @@ export default function AuthScreen({ onLogin }) {
         bordurGri: '#dee2e6'
     };
 
-    const handleRegister = async () => {
+    const handleRegister = async (e) => {
+        e.preventDefault();
+
         if (regPassword !== regPasswordConfirm) {
             alert('Lütfen girdiğiniz şifrelerin aynı olduğundan emin olun.');
             return;
@@ -64,13 +69,71 @@ export default function AuthScreen({ onLogin }) {
             const response = await api.post('/Employee', newEmployee);
 
             if (response.status === 200 || response.status === 201) {
-            alert('Kayıt başarılı! Giriş yapabilirsiniz.');
-            setIsLogin(true);
+            //alert('Lütfen Mailinize gönderilen doğrulama kodunu giriniz.');
+            setRegStep(2);
             }
         } catch (error) {
             console.error('Kayıt sırasında hata oluştu:', error);
             alert('Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.');
         }
+    };
+
+    const handleOtpChange = (e, index) => {
+        const value = e.target.value;
+
+        if (isNaN(value)) return;
+
+        const newOtp = [...otp];
+        newOtp[index] = value;
+        setOtp(newOtp);
+
+        //setOtp(...[otp.map((d, idx) => (idx === index ? element.value : d))]);
+
+        if(value !== '' && e.target.nextElementSibling) {
+            e.target.nextElementSibling.focus();
+        }
+    };
+
+    const handleKeyDown = (e, index) => {
+
+        if (e.key === 'Backspace' && !otp[index] && e.target.previousElementSibling){
+            e.target.previousElementSibling.focus();
+        }
+    };
+
+    const handleVerifyOtp = async(e) => {
+        if (e) e.preventDefault();
+
+        const code = otp.join('');
+        if (code.length < 6){
+            alert('Lütfen 6 haneli kodu eksiksiz giriniz.');
+            return;
+        }
+
+        //mock giriş
+        if (code === '111111'){
+            onLogin(regEmail, regPassword);
+        }else{
+            alert('Hatalı kod girdiniz. Lütfen tekrar deneyiniz.');
+            setOtp(['','','','','','']);
+        }
+        
+        /*
+        try{
+            const response = await api.post('Auth/VerifyOtp', {
+                email: regEmail,
+                otpCode: code
+            });
+
+            if(response.status === 200){
+                onLogin(regEmail, regPassword);
+            }
+        } catch (error) {
+            console.error('OTP Doğrulama Hatası:', error);
+            alert('Hatalı veya süresi dolmuş bir kod girdiniz.');
+            setOtp(['','','','','','']);
+        }
+            */
     };
 
     const handleLogin = (e) => {
@@ -82,6 +145,8 @@ export default function AuthScreen({ onLogin }) {
         }     
         onLogin(email, password);
     };
+
+    const isOtpValid = otp.every(val => val !== '');
 
     return (
         <div
@@ -101,37 +166,40 @@ export default function AuthScreen({ onLogin }) {
                         {isLogin ? 'Kurumsal İzin Sistemi' : 'Yeni Çalışan Kaydı'}
                     </h3>
                     <p className="small text-muted">
-                        {isLogin ? 'Lütfen kurum kimlik bilgilerinizle giriş yapın.' : 'Sisteme dahil olmak için bilgilerinizi eksiksiz girin.'}
+                        {isLogin ? 'Lütfen kurum kimlik bilgilerinizle giriş yapın.' 
+                        : (regStep === 1 ? 'Sisteme dahil olmak için bilgilerinizi eksiksiz girin.' : `${regEmail} adresine gönderilen 6 haneli kodu giriniz.`)}
                     </p>
                 </div>
 
                 {/* Sekmeler (Giriş Yap / Kayıt Ol) */}
-                <div className="d-flex p-1 rounded mb-4" style={{ backgroundColor: colors.acikGri }}>
-                    <button
-                        className="btn w-50 fw-bold border-0"
-                        style={{
-                            backgroundColor: isLogin ? '#FFFFFF' : 'transparent',
-                            color: isLogin ? colors.ziraatKirmizi : '#6c757d',
-                            boxShadow: isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-                            borderRadius: '8px'
-                        }}
-                        onClick={() => setIsLogin(true)}
-                    >
-                        Giriş Yap
-                    </button>
-                    <button
-                        className="btn w-50 fw-bold border-0"
-                        style={{
-                            backgroundColor: !isLogin ? '#FFFFFF' : 'transparent',
-                            color: !isLogin ? colors.ziraatKirmizi : '#6c757d',
-                            boxShadow: !isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-                            borderRadius: '8px'
-                        }}
-                        onClick={() => setIsLogin(false)}
-                    >
-                        Kayıt Ol
-                    </button>
-                </div>
+                {(isLogin || regStep === 1) && (
+                    <div className="d-flex p-1 rounded mb-4" style={{ backgroundColor: colors.acikGri }}>
+                        <button
+                            className="btn w-50 fw-bold border-0"
+                            style={{
+                                backgroundColor: isLogin ? '#FFFFFF' : 'transparent',
+                                color: isLogin ? colors.ziraatKirmizi : '#6c757d',
+                                boxShadow: isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                                borderRadius: '8px'
+                            }}
+                            onClick={() => {setIsLogin(true); setRegStep(1); }}
+                        >
+                            Giriş Yap
+                        </button>
+                        <button
+                            className="btn w-50 fw-bold border-0"
+                            style={{
+                                backgroundColor: !isLogin ? '#FFFFFF' : 'transparent',
+                                color: !isLogin ? colors.ziraatKirmizi : '#6c757d',
+                                boxShadow: !isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+                                borderRadius: '8px'
+                            }}
+                            onClick={() => setIsLogin(false)}
+                        >
+                            Kayıt Ol
+                        </button>
+                    </div>
+                )}
 
                 {/* GİRİŞ YAP FORMU */}
                 {isLogin ? (
@@ -188,7 +256,8 @@ export default function AuthScreen({ onLogin }) {
                         </button>
                     </form>
                 ) : (
-                    <form>
+                    regStep === 1 ? (
+                    <form onSubmit={handleRegister}>
                         <div className="row mb-2">
                             <div className="col-6">
                                 <label className="form-label fw-bold small mb-1 text-dark">Ad</label>
@@ -244,15 +313,55 @@ export default function AuthScreen({ onLogin }) {
                             </div>
                         </div>
                         <button 
-                            type="button" 
+                            type="submit" 
                             className="btn w-100 fw-bold py-2 shadow-sm mt-2" 
                             style={{ backgroundColor: colors.ziraatKirmizi, color: '#FFFFFF', borderRadius: '8px' }}
-                            onClick={handleRegister}
+                            
                         >
                             Kaydı Tamamla
                         </button>
                     </form>
-                )}
+                ) :(
+                    <form className='text-center' onSubmit={handleVerifyOtp}>
+                        <div className='d-flex justify-content-between mb-4 mt-3'>
+                            {otp.map((data,index) => {
+                                return (
+                                    <input
+                                        autoFocus={index === 0}
+                                        className='form-control text-center fw-bold fs-4 mx-1'
+                                        style={{ width: '50px', height: '60px', backgroundColor: colors.acikGri, borderColor: colors.bordurGri, borderRadius: '8px'}}
+                                        type='text'
+                                        name='otp'
+                                        maxLength='1'
+                                        key={index}
+                                        value={data}
+                                        onChange={e => handleOtpChange(e, index)}
+                                        onKeyDown={e => handleKeyDown(e, index)}
+                                        onFocus={e => e.target.select()}
+                                    />
+                                );
+                            })}
+                        </div>
+                        <button
+                            type='submit'
+                            className='btn w-100 fw-bold py-2 shadow-sm mb-3'
+                            disabled={!isOtpValid}
+                            style={{ backgroundColor: colors.koyuGri, color: '#FFFFFF', borderRadius: '8px', opacity: isOtpValid ? 1 : 0.6, cursor: isOtpValid ? 'pointer' : 'not-allowed'}}
+                            //onClick={handleVerifyOtp}
+                        >
+                            Doğrula ve Devam Et
+                        </button>
+                        <button
+                            type='button'
+                            className='btn btn-link text-decoration-none p-0 text-muted small'
+                            onClick={() => alert("Yeni Kod Gönderildi!")}
+                        >
+                             Kodu Tekrar Gönder
+                        </button>
+                    </form>
+                )
+            )}
+
             </div>
         </div>
     );

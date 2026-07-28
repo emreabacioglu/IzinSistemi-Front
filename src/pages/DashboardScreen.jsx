@@ -46,6 +46,16 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
+    const publicHolidays = [
+        '01-01', // Yılbaşı
+        '04-23', // Ulusal Egemenlik ve Çocuk Bayramı
+        '05-01', // Emek ve Dayanışma Günü
+        '05-19', // Atatürk'ü Anma, Gençlik ve Spor Bayramı
+        '07-15', // Demokrasi ve Milli Birlik Günü
+        '08-30', // Zafer Bayramı
+        '10-29'  // Cumhuriyet Bayramı
+    ];
+
     const currentMonthLeaves = leaves.filter(leave => {
         const leaveDate = new Date(leave.startDate);
         return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
@@ -200,6 +210,9 @@ export default function DashboardScreen({ user, onLogout }) {
     const handleDeleteLeaves = async () => {
         if (selectedDays.length === 0) return;
 
+        const isUserSure = window.confirm(`Seçtiğiniz ${selectedDays.length} günlük izni iptal etmek istediğinize emin misiniz?`);
+        if (!isUserSure) return;
+
         try {
             const deleteRequest = selectedDays.map(day => {
                 const leaveToDelete = currentMonthLeaves.find(l => l.day === day);
@@ -322,9 +335,13 @@ export default function DashboardScreen({ user, onLogout }) {
                                         const dayName = dayNames[dayOfWeek];
                                         const isToday = (selectedYear === currentYear && selectedMonth === currentMonth && day === currentDay);
 
+                                        const dateString = `${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                        const isHoliday = publicHolidays.includes(dateString);
+                                        const isOffDay = isWeekend || isHoliday;
+
                                         return (
-                                            <th key={day} className="text-center p-1" style={{ minWidth: '40px', backgroundColor: isWeekend ? '#e9ecef' : 'transparent', color: isWeekend ? '#dc3545' : colors.darkGray }}>
-                                                <div style={{ fontSize: '10px', fontWeight: 'bold', color: isToday ? colors.primaryRed : (isWeekend ? '#dc3545' : '#6c757d'), marginBottom: '2px' }}>
+                                            <th key={day} className="text-center p-1" style={{ minWidth: '40px', backgroundColor: isWeekend ? '#e9ecef' : 'transparent', color: isOffDay ? '#dc3545' : colors.darkGray }}>
+                                                <div style={{ fontSize: '10px', fontWeight: 'bold', color: isToday ? colors.primaryRed : (isOffDay ? '#dc3545' : '#6c757d'), marginBottom: '2px' }}>
                                                     {dayName}
                                                 </div>
                                                 {isToday ? (
@@ -355,6 +372,10 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 const dayOfWeek = actualDate.getDay();
                                                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                                                 const isPast = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth) || (selectedYear === currentYear && selectedMonth === currentMonth && day < currentDay);
+                                                
+                                                const dateString = `${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                                const isHoliday = publicHolidays.includes(dateString);
+                                                const isOffDay = isWeekend || isHoliday;
 
                                                 const existingLeave = person.leaves?.find(l => l.day === day);
                                                 const isCurrentlySelected = isCurrentUser && selectedDays.includes(day);
@@ -365,6 +386,10 @@ export default function DashboardScreen({ user, onLogout }) {
 
                                                 if (isWeekend) {
                                                     bgColor = '#e9ecef';
+                                                }
+                                                else if (isHoliday){
+                                                    bgColor = '#fffff'
+                                                
                                                 } else if (existingLeave) {
                                                     if (existingLeave.status === 'Kesinleşen') {
                                                         bgColor = '#59f7ad'; 
@@ -375,20 +400,20 @@ export default function DashboardScreen({ user, onLogout }) {
                                                     }
                                                 }
 
-                                                if (isPast && !isWeekend) {
+                                                if (isPast && !isOffDay) {
                                                     bgPattern = 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)';
                                                 }
 
                                                 let cursorStyle = 'default';
                                                 if (isEditMode && isCurrentUser) {
-                                                    if (isPast || isWeekend) cursorStyle = 'not-allowed';
+                                                    if (isPast || isOffDay) cursorStyle = 'not-allowed';
                                                     else cursorStyle = 'pointer';
                                                 }
 
                                                 return (
                                                     <td
                                                         key={day}
-                                                        onClick={() => isCurrentUser && handleCellClick(day, isPast, isWeekend, existingLeave?.status)}
+                                                        onClick={() => isCurrentUser && handleCellClick(day, isPast, isOffDay, existingLeave?.status)}
                                                         className="text-center align-middle p-0 border-end"
                                                         style={{
                                                             height: '40px',
@@ -396,7 +421,9 @@ export default function DashboardScreen({ user, onLogout }) {
                                                             backgroundImage: bgPattern,
                                                             color: textColor,
                                                             cursor: cursorStyle,
-                                                            transition: 'all 0.2s ease-in-out'
+                                                            transition: 'all 0.2s ease-in-out',
+
+                                                            boxShadow: isHoliday ? `inset 0 0 0 2px ${colors.primaryRed}` : 'none' //çerçece kısmı burası 
                                                         }}
                                                     >
                                                         {isEditMode && isCurrentlySelected && (
