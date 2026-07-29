@@ -279,10 +279,20 @@ export default function DashboardScreen({ user, onLogout }) {
             }
         }
 
-        //backend kısmı
+        try {
+            await api.put(`/Auth/UpdateProfile/${user.id}`, {
+                department: selectedDept,
+                title: selectedTitle
+            });
 
-        setIsProfileSetupDone(true);
-        setShowProfileModal(false);
+            setIsProfileSetupDone(true);
+            setShowProfileModal(false);
+            alert("Profil başarıyla güncellendi.")
+
+        } catch (error) {
+            console.error("Profil güncellenirken hata:", error);
+            alert("Profil bilgileri kaydedilirken bir hata oluştu.");
+        }
     };
 
     return (

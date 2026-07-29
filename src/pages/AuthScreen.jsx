@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../api';
 
 export default function AuthScreen({ onLogin }) {
@@ -57,16 +57,12 @@ export default function AuthScreen({ onLogin }) {
             return;
         }
         try {
-            const newEmployee = {
-                name: regName,
-                surname: regSurname,
-                email: regEmail,
-                password: regPassword,
-                department: "Belirtilmedi",
-                title: "Belirtilmedi"
-            };
-
-            const response = await api.post('/Employee', newEmployee);
+            const response = await api.post('/Auth/Register', {
+            name: regName,
+            surname: regSurname,
+            email: regEmail,
+            password: regPassword
+        });
 
             if (response.status === 200 || response.status === 201) {
             //alert('Lütfen Mailinize gönderilen doğrulama kodunu giriniz.');
@@ -111,14 +107,14 @@ export default function AuthScreen({ onLogin }) {
         }
 
         //mock giriş
-        if (code === '111111'){
-            onLogin(regEmail, regPassword);
-        }else{
-            alert('Hatalı kod girdiniz. Lütfen tekrar deneyiniz.');
-            setOtp(['','','','','','']);
-        }
+        //if (code === '111111'){
+          //  onLogin(regEmail, regPassword);
+        //}else{
+          //  alert('Hatalı kod girdiniz. Lütfen tekrar deneyiniz.');
+            //setOtp(['','','','','','']);
+      //  }
         
-        /*
+        
         try{
             const response = await api.post('Auth/VerifyOtp', {
                 email: regEmail,
@@ -133,7 +129,7 @@ export default function AuthScreen({ onLogin }) {
             alert('Hatalı veya süresi dolmuş bir kod girdiniz.');
             setOtp(['','','','','','']);
         }
-            */
+            
     };
 
     const handleLogin = (e) => {
@@ -147,6 +143,60 @@ export default function AuthScreen({ onLogin }) {
     };
 
     const isOtpValid = otp.every(val => val !== '');
+
+
+    const [timeLeft, setTimeLeft] = useState(300);
+    const [resendTimer, setResendTimer] = useState(30);
+
+
+    useEffect(() => {
+
+        if(timeLeft > 0){
+            const timerId = setInterval(() => {
+                setTimeLeft((prev) => prev - 1);
+            }, 1000);
+            return () => clearInterval(timerId);
+        }
+    }, [timeLeft]);
+
+    useEffect(() => {
+        if (resendTimer > 0) {
+            const timerId = setInterval(() => setResendTimer((prev) => prev - 1), 1000);
+            return () => clearInterval(timerId);
+        }
+    }, [resendTimer]);
+
+    const formatTime = () => {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    const handleResendCode = async () => {
+        try {
+            await api.post('/Auth/Register', {
+                name: regName,
+                surname: regSurname,
+                email: regEmail,
+                password: regPassword
+            });
+
+            setTimeLeft(300);
+            setResendTimer(30);
+            alert("Yeni kod e-postanıza gönderildi!");
+
+        } catch (error) {
+
+            console.error("GİZLİ HATA BURADA:", error);
+
+            if (error.response && error.response.status === 400){
+                alert(error.resposne.data);
+                } else {
+            alert("Kod gönderilirken bir hata oluştu.");
+            }
+        }
+    };
+
 
     return (
         <div
@@ -351,13 +401,33 @@ export default function AuthScreen({ onLogin }) {
                         >
                             Doğrula ve Devam Et
                         </button>
-                        <button
-                            type='button'
-                            className='btn btn-link text-decoration-none p-0 text-muted small'
-                            onClick={() => alert("Yeni Kod Gönderildi!")}
-                        >
-                             Kodu Tekrar Gönder
-                        </button>
+                        <div className="text-center mt-4">
+                            {/* 5 Dakikalık Ana Sayaç */}
+                            {timeLeft > 0 ? (
+                                <p className="text-muted small fw-bold mb-2">
+                                    Kodun Geçerlilik Süresi: <span style={{ color: '#E10514' }}>{formatTime()}</span>
+                                </p>
+                            ) : (
+                                <p className="text-danger small fw-bold mb-2">
+                                    Kodun süresi doldu. Lütfen yeni bir kod isteyin.
+                                </p>
+                            )}
+
+                            {/* 30 Saniyelik Yeniden Gönder Butonu */}
+                            <button 
+                                type="button" 
+                                className="btn btn-link text-decoration-none fw-bold"
+                                style={{ color: resendTimer > 0 ? '#6c757d' : '#2C3238' }}
+                                disabled={resendTimer > 0} 
+                                onClick={handleResendCode}
+                            >
+                                {resendTimer > 0 
+                                    ? `Kodu Tekrar Gönder (${resendTimer}s)` 
+                                    : 'Kodu Tekrar Gönder'
+                                }
+                            </button>
+                        </div>
+                        
                     </form>
                 )
             )}
