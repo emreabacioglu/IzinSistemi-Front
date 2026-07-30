@@ -31,6 +31,12 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const [isProfileSetupDone, setIsProfileSetupDone] = useState(false);
 
+    const [filterDepartment, setFilterDepartment] = useState(user?.department || 'Tümü');
+    const [selectedStaffIds, setSelectedStaffIds] = useState([]);
+
+    
+    
+
     const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
 
     const getDaysForMonth = (monthValue) => {
@@ -109,6 +115,8 @@ export default function DashboardScreen({ user, onLogout }) {
     const currentUser = user ? {
         id: user.id,
         fullName: `${user.name} ${user.surname}`,
+        department: user.department,
+        title: user.title,
         leaves: currentMonthLeaves
     } : null;
 
@@ -211,6 +219,8 @@ export default function DashboardScreen({ user, onLogout }) {
     };
     const { canPlan, canConfirm, canCancel } = getSelectionActions();
 
+
+
     const handleUpdateStatus = async (newStatus) => {
         if (selectedDays.length === 0) return;
 
@@ -301,6 +311,36 @@ export default function DashboardScreen({ user, onLogout }) {
         }
     };
 
+
+    const allStaff = [currentUser]; //mock data
+
+    let filteredStaff = allStaff.filter(person => {
+        if (!person.department || person.department === 'Belirtilmedi') return false;
+        if (filterDepartment === 'Tümü') return true;
+        return person.department === filterDepartment;
+    });
+
+    filteredStaff.sort((a, b) => {
+        
+        if (a.title === 'Yönetici' && b.title !== 'Yönetici') return -1;
+        if (b.title === 'Yönetici' && a.title !== 'Yönetici') return 1;
+
+        if(a.id === currentUser.id) return -1;
+        if(b.id === currentUser.id) return 1;
+
+        const roleOrder = { 'Analist': 1, 'Yazılımcı': 2};
+        const roleA = roleOrder[a.title] || 99;
+        const roleB = roleOrder[b.title] || 99;
+
+        if (roleA !== roleB) return roleA - roleB;
+
+        return a.fullName.localeCompare(b.fullName);
+    });
+
+    const displayedStaff = selectedStaffIds.length > 0 
+        ? filteredStaff.filter(p => selectedStaffIds.includes(p.id))
+        : filteredStaff;
+
     return (
         <div className="container-fluid p-0 vh-100 d-flex flex-column" style={{ backgroundColor: '#F0F2F5' }}>
 
@@ -325,11 +365,68 @@ export default function DashboardScreen({ user, onLogout }) {
                         </select>
 
                         <div className="vr ms-2 me-2"></div>
-                        <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 fw-bold">
-                            <span>Filtrele (Tüm Ekip)</span>
-                            <span style={{ fontSize: '10px' }}>▼</span>
-                        </button>
+
+                        <select
+                         className="form-select form-select-sm fw-bold text-primary shadow-none border-1"
+                         style={{ width: '180px', cursor: 'pointer', backgroundColor: '#e9ecef'}}
+                         value={filterDepartment}
+                         onChange={(e) => {
+                            setFilterDepartment(e.target.value);
+                            setSelectedStaffIds([]);
+                         }}
+                         >
+                            <option value="Tümü">Tüm Departmanlar</option>
+                            <option value="Temel Bankacılık">Temel Bankacılık</option>
+                            <optgroup label="Bankacılık Hizmetleri">
+                                <option value="Nakit Yönetimi">Nakit Yönetimi</option>
+                                <option value="Çek Senet">Çek Senet</option>
+                            </optgroup>      
+                        </select>
                     </div>
+
+                    <div className='dropdown'>
+                        <button 
+                        className='btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 fw-bold dropdown-toggle'
+                        type='button'
+                        data-bs-toggle='dropdown'
+                        aria-expanded='false'
+                        data-bs-auto-close='outside'>
+                            <span>Kişi Seç {selectedStaffIds.length > 0 && <span className='badge bg-danger ms-1'>{selectedStaffIds.length}</span>}</span>
+                        </button>
+                        <ul className='dropdown-menu p-2 shadow-sm border-0'
+                        style={{ minWidth: '220px', maxHeight: '300px', overflowY: 'auto' }}
+                        >
+                            {filteredStaff.length === 0 ? (
+                                <li className='text-muted small text-center p-2'>Bu departmanda kimse bulunamadı.</li>
+                            ):(
+                                filteredStaff.map(person => (
+                                    <li key={person.id} className='form-check m-1'>
+                                        <input
+                                            className='form-check-input shadow-none'
+                                            type='checkbox'
+                                            id={`check-${person.id}`}
+                                            checked={selectedStaffIds.includes(person.id)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setSelectedStaffIds([...selectedStaffIds, person.id]);
+                                                } else {
+                                                    setSelectedStaffIds(selectedStaffIds.filter(id => id !== person.id));
+
+                                                }
+                                                
+                                            }}
+                                        />
+                                        <label className='form-check-label w-100 user-select-none' htmlFor={`check-${person.id}`} style={{ cursor: 'pointer', fontSize: '13px' }}>
+                                            {person.fullName} <span className='text-muted' style={{ fontSize: '11px'}}>({person.title})</span>
+                                        </label>
+                                    </li>
+                                ))
+                            )}
+
+                        </ul>
+                    </div>
+
+
 
                     <div>
                         {!isEditMode ? (
@@ -425,12 +522,33 @@ export default function DashboardScreen({ user, onLogout }) {
                             </thead>
 
                             <tbody>
-                                {staffList.map(person => {
+                                {displayedStaff.map(person => {
                                     const isCurrentUser = person.id === currentUser.id;
+
+                                    let titleBadge = null;
+
+                                    if (person.title === 'Yönetici') {
+                                        titleBadge = <span className='badge bg-dark ms-2 shadow-sm' style={{ fontSize: '9px', letterSpacing: '0.5px' }}>Yönetici</span>;
+                                    } else if (person.title === 'Analist') {
+                                        titleBadge = <span className="badge ms-2 shadow-sm" style={{ backgroundColor: '#0d6efd', fontSize: '9px', letterSpacing: '0.5px' }}>ANALİST</span>;
+                                    } else if (person.title === 'Yazılımcı') {
+                                        titleBadge = <span className="badge ms-2 shadow-sm" style={{ backgroundColor: '#198754', fontSize: '9px', letterSpacing: '0.5px' }}>YAZILIMCI</span>;
+                                    }
 
                                     return (
                                         <tr key={person.id}>
-                                            <td className="fw-medium px-3 align-middle text-dark bg-white">{person.fullName}</td>
+                                            <td className="fw-medium px-3 align-middle text-dark border-end" style={{ backgroundColor: isCurrentUser ? '#fdfbfb' : 'white' }}>
+                                                <div className="d-flex align-items-center justify-content-between">
+                                                    <div>
+                                                        {person.fullName}
+                                                        {isCurrentUser && <span className="badge bg-danger ms-1 rounded-pill" style={{fontSize: '8px'}}>SEN</span>}
+                                                    </div>
+                                                    <div>
+                                                        {titleBadge}
+                                                    </div>
+                                                </div>
+                                            </td>
+
 
                                             {days.map(day => {
                                                 const actualDate = new Date(selectedYear, selectedMonth - 1, day);
@@ -561,11 +679,11 @@ export default function DashboardScreen({ user, onLogout }) {
                                     onChange={(e) => setSelectedDept(e.target.value)}
                                 >
                                     <option value="">Seçiniz...</option>
-                                    <option value="Bilgi Teknolojileri">Bilgi Teknolojileri (IT)</option>
-                                    <option value="İnsan Kaynakları">İnsan Kaynakları</option>
-                                    <option value="Muhasebe ve Finans">Muhasebe ve Finans</option>
-                                    <option value="Satış ve Pazarlama">Satış ve Pazarlama</option>
-                                    <option value="Operasyon">Operasyon</option>
+                                    <option value="Temel Bankacılık">Temel Bankacılık</option>
+                                    <optgroup label="Bankacılık Hizmetleri">
+                                        <option value="Nakit Yönetimi">Nakit Yönetimi</option>
+                                        <option value="Çek Senet">Çek Senet</option>
+                                    </optgroup>                                        
                                 </select>
                             </div>
 
@@ -578,11 +696,9 @@ export default function DashboardScreen({ user, onLogout }) {
                                     onChange={(e) => setSelectedTitle(e.target.value)}
                                 >
                                     <option value="">Seçiniz...</option>
-                                    <option value="Junior Uzman">Junior Uzman</option>
-                                    <option value="Uzman">Uzman</option>
-                                    <option value="Kıdemli Uzman">Kıdemli Uzman (Senior)</option>
-                                    <option value="Takım Lideri">Takım Lideri</option>
-                                    <option value="Yönetici / Müdür">Yönetici / Müdür</option>
+                                    <option value="Yönetici">Yönetici</option>
+                                    <option value="Analist">Analist</option>
+                                    <option value="Yazılımcı">Yazılımcı</option>              
                                 </select>
                             </div>
 
