@@ -84,6 +84,12 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const currentMonthLeaves = leaves.filter(leave => {
         const leaveDate = new Date(leave.startDate);
+        const today = new Date();
+        today.setHours(0,0,0,0)
+
+        if (leave.status === 'Planned' && leaveDate < today){
+            return false;
+        }
         return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
     })
     .map(leave => {
@@ -451,10 +457,10 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 
                                                 } else if (existingLeave) {
                                                     if (existingLeave.status === 'Kesinleşen') {
-                                                        bgColor = '#59f7ad'; 
+                                                        bgColor = '#62e799'; 
                                                         textColor = 'white';
                                                     } else if (existingLeave.status === 'Planlanan') {
-                                                        bgColor = '#ffd659'; 
+                                                        bgColor = '#f3e411'; 
                                                         textColor = '#000';
                                                     }
                                                 }

@@ -38,6 +38,7 @@ export default function App() {
 
     const handleLogout = () => {
         localStorage.removeItem('user');
+        
         setUser(null);
         setIsLoggedIn(false);
     }
@@ -53,7 +54,7 @@ export default function App() {
                     path="/"
                     element={
                         isLoggedIn
-                            ? <DashboardScreen user={user} onLogout={() => { setIsLoggedIn(false); setUser(null); }} />
+                            ? <DashboardScreen user={user} onLogout={handleLogout} />
                             : <AuthScreen onLogin={handleLogin} />
                     }
                 />
