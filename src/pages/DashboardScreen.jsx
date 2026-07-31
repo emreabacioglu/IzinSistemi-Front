@@ -34,6 +34,7 @@ export default function DashboardScreen({ user, onLogout }) {
     const [filterDepartment, setFilterDepartment] = useState(user?.department || 'Tümü');
     const [selectedStaffIds, setSelectedStaffIds] = useState([]);
 
+    const [allStaff, setAllStaff] = useState([]);
     
     
 
@@ -57,8 +58,19 @@ export default function DashboardScreen({ user, onLogout }) {
         }
     };
 
+    const fetchAllStaff =async () => {
+        try {
+            const response = await api.get('/Employee');
+            setAllStaff(response.data);
+        }catch (error) {
+            console.error('Çalışan listesi alınırken bir hata oluştu:', error);
+        }
+    };
+
+
     useEffect(() => {
         fetchLeaves();
+        fetchAllStaff();
     }, [user]);
 
     const currentYear = currentDate.getFullYear();
@@ -88,35 +100,43 @@ export default function DashboardScreen({ user, onLogout }) {
         '10-29'  // Cumhuriyet Bayramı
     ];
 
-    const currentMonthLeaves = leaves.filter(leave => {
-        const leaveDate = new Date(leave.startDate);
-        const today = new Date();
-        today.setHours(0,0,0,0)
+    const processUserLeaves = (rawLeaves) => {
+        if (!rawLeaves) return [];
 
-        if (leave.status === 'Planned' && leaveDate < today){
-            return false;
-        }
-        return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
-    })
-    .map(leave => {
+        return rawLeaves.filter(leave => {
+            const leaveDate = new Date(leave.startDate);
+            const today = new Date();
+            today.setHours(0,0,0,0);
 
-        let standardizedStatus = leave.status;
-        if (standardizedStatus === 'Planned') standardizedStatus = 'Planlanan';
-        if (standardizedStatus === 'Approved') standardizedStatus = 'Kesinleşen';
-        //if (standardizedStatus === 'Cancelled') standardizedStatus = 'İptal Edilen';
-    
-        return {
-            id: leave.id,
-            day: new Date(leave.startDate).getDate(),
-            status: standardizedStatus
-        };
-    });
+            if (leave.status === 'Planned' && leaveDate <= today){
+                return false;
+            }
+            return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
+        })
+        .map(leave => {
+
+            let standardizedStatus = leave.status;
+            if (standardizedStatus === 'Planned') standardizedStatus = 'Planlanan';
+            if (standardizedStatus === 'Approved') standardizedStatus = 'Kesinleşen';
+        
+            return {
+                id: leave.id,
+                day: new Date(leave.startDate).getDate(),
+                status: standardizedStatus
+            };
+        });
+    };
+
+    const currentMonthLeaves = processUserLeaves(leaves);
+
+    const currentDept = isProfileSetupDone ? selectedDept : user?.department;
+    const currentTitle = isProfileSetupDone ? selectedTitle : user?.title;
 
     const currentUser = user ? {
         id: user.id,
         fullName: `${user.name} ${user.surname}`,
-        department: user.department,
-        title: user.title,
+        department: currentDept,
+        title: currentTitle,
         leaves: currentMonthLeaves
     } : null;
 
@@ -285,15 +305,9 @@ export default function DashboardScreen({ user, onLogout }) {
         }
     }, [user, isProfileSetupDone]);
 
-    const handleCompleteProfile = async (e) => {
-        if(e) e.preventDefault();
 
-        if(modalStep === 1){
-            if (!selectedDept || !selectedTitle) {
-                alert("Devam etmek için departman ve unvan seçimini yapınız.");
-                return;
-            }
-        }
+    const handleCompleteProfile = async (e) => {
+        if(e) e.preventDefault(); 
 
         try {
             await api.put(`/Auth/UpdateProfile/${user.id}`, {
@@ -301,9 +315,17 @@ export default function DashboardScreen({ user, onLogout }) {
                 title: selectedTitle
             });
 
+            const updatedUser = { ...user, department: selectedDept, title: selectedTitle};
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+
             setIsProfileSetupDone(true);
             setShowProfileModal(false);
+            setFilterDepartment(selectedDept);
+
+            await fetchAllStaff();
+
             alert("Profil başarıyla güncellendi.")
+
 
         } catch (error) {
             console.error("Profil güncellenirken hata:", error);
@@ -312,11 +334,20 @@ export default function DashboardScreen({ user, onLogout }) {
     };
 
 
-    const allStaff = [currentUser]; //mock data
+    const processedStaff = allStaff.map(person =>{
+        if (person.id === currentUser?.id){
+            return {...person, leaves: currentMonthLeaves};
+        }
+        return {...person, leaves: processUserLeaves(person.leaves) };
+    });
 
-    let filteredStaff = allStaff.filter(person => {
+    let filteredStaff = processedStaff.filter(person => {
         if (!person.department || person.department === 'Belirtilmedi') return false;
         if (filterDepartment === 'Tümü') return true;
+
+        if (filterDepartment === 'Bankacılık Hizmetleri') {
+            return person.department === 'Nakit Yönetimi' || person.department === 'Çek Senet';
+        }
         return person.department === filterDepartment;
     });
 
@@ -327,6 +358,12 @@ export default function DashboardScreen({ user, onLogout }) {
 
         if(a.id === currentUser.id) return -1;
         if(b.id === currentUser.id) return 1;
+
+        const isASameTitle = a.title === currentUser.title;
+        const isBSameTitle = b.title === currentUser.title;
+
+        if (isASameTitle && !isBSameTitle) return -1;
+        if (!isASameTitle && isBSameTitle) return 1;
 
         const roleOrder = { 'Analist': 1, 'Yazılımcı': 2};
         const roleA = roleOrder[a.title] || 99;
@@ -377,10 +414,9 @@ export default function DashboardScreen({ user, onLogout }) {
                          >
                             <option value="Tümü">Tüm Departmanlar</option>
                             <option value="Temel Bankacılık">Temel Bankacılık</option>
-                            <optgroup label="Bankacılık Hizmetleri">
-                                <option value="Nakit Yönetimi">Nakit Yönetimi</option>
-                                <option value="Çek Senet">Çek Senet</option>
-                            </optgroup>      
+                            <option value="Bankacılık Hizmetleri">Bankacılık Hizmetleri</option>
+                            <option value="Nakit Yönetimi">&nbsp;&nbsp;&nbsp;Nakit Yönetimi</option>
+                            <option value="Çek Senet">&nbsp;&nbsp;&nbsp;Çek Senet</option>      
                         </select>
                     </div>
 
@@ -518,6 +554,10 @@ export default function DashboardScreen({ user, onLogout }) {
                                             </th>
                                         );
                                     })}
+
+                                    <th className='px-3 align-middle text-center' style={{ minWidth: '80px,', backgroundColor: '#e9ecef'}}>
+                                        Toplam
+                                    </th>
                                 </tr>
                             </thead>
 
@@ -528,7 +568,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                     let titleBadge = null;
 
                                     if (person.title === 'Yönetici') {
-                                        titleBadge = <span className='badge bg-dark ms-2 shadow-sm' style={{ fontSize: '9px', letterSpacing: '0.5px' }}>Yönetici</span>;
+                                        titleBadge = <span className='badge bg-dark ms-2 shadow-sm' style={{ fontSize: '9px', letterSpacing: '0.5px' }}>YÖNETİCİ</span>;
                                     } else if (person.title === 'Analist') {
                                         titleBadge = <span className="badge ms-2 shadow-sm" style={{ backgroundColor: '#0d6efd', fontSize: '9px', letterSpacing: '0.5px' }}>ANALİST</span>;
                                     } else if (person.title === 'Yazılımcı') {
@@ -568,10 +608,11 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 let textColor = 'inherit';
 
                                                 if (isWeekend) {
-                                                    bgColor = '#e9ecef';
+                                                    bgColor = '#f1f3f5'; //#e9ecef
                                                 }
                                                 else if (isHoliday){
-                                                    bgColor = '#fffff'
+                                                    bgColor = '#ffe5e5'
+                                                    textColor = '#d954f'
                                                 
                                                 } else if (existingLeave) {
                                                     if (existingLeave.status === 'Kesinleşen') {
@@ -606,7 +647,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                                             cursor: cursorStyle,
                                                             transition: 'all 0.2s ease-in-out',
 
-                                                            boxShadow: isHoliday ? `inset 0 0 0 2px ${colors.primaryRed}` : 'none' //çerçece kısmı burası 
+                                                            boxShadow: 'none' //isHoliday ? `inset 0 0 0 2px ${colors.primaryRed}` : 'none' //çerçece kısmı burası 
                                                         }}
                                                     >
                                                         {isEditMode && isCurrentlySelected && (
@@ -615,12 +656,59 @@ export default function DashboardScreen({ user, onLogout }) {
                                                     </td>
                                                 );
                                             })}
+
+                                            <td className='text-center align-middle fw-bold border-start bg-light'>
+                                                {person.leaves?.filter(l => l.status === 'Kesinleşen').length || 0}
+                                            </td>
                                         </tr>
                                     );
                                 })}
+
+                                <tr style={{ backgroundColor: '#f8f9fa', borderTop: '2px solid #dee2e6'}}>
+                                    <td className='text-center fw-bold px-3 py-2 text-muted'>Günlük İzinli Sayısı:</td>
+                                    {days.map(day => {
+                                        const totalOnLeave = displayedStaff.reduce((sum, p) => {
+                                            const hasLeave = p.leaves && p.leaves.some(l => l.day === day && l.status === 'Kesinleşen' );
+                                            return sum + (hasLeave ? 1 : 0);
+                                        }, 0);
+
+                                        const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+                                        const isWeekend = actualDate.getDay() === 0 || actualDate.getDay() === 6;
+                                        return (
+                                            <td key={`total-${day}`} className="text-center align-middle fw-bold" style={{ backgroundColor: isWeekend ? '#e9ecef' : 'transparent', color: totalOnLeave > 0 ? '#E10514' : '#adb5bd' }}>
+                                                {totalOnLeave > 0 ? totalOnLeave : (isWeekend ? '' : '-')}
+                                            </td>
+                                        );
+                                    })}
+                                    <td className='bg-light'></td>
+                                </tr>
                             </tbody>
 
                         </table>
+                    </div>
+
+                                    {/* Tablonun bittiği div'in hemen altına ekle */}
+                    <div className="d-flex flex-wrap gap-4 p-3 bg-white border-top text-muted" style={{ fontSize: '12px' }}>
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: '16px', height: '16px', backgroundColor: '#62e799', borderRadius: '4px' }}></div>
+                            <span>Kesinleşen İzin</span>
+                        </div>
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: '16px', height: '16px', backgroundColor: '#f3e411', borderRadius: '4px' }}></div>
+                            <span>Planlanan İzin</span>
+                        </div>
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: '16px', height: '16px', backgroundColor: '#ffe5e5', borderRadius: '4px' }}></div>
+                            <span>Resmi/Dini Tatil</span>
+                        </div>
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: '16px', height: '16px', backgroundColor: '#f1f3f5', borderRadius: '4px' }}></div>
+                            <span>Hafta Sonu</span>
+                        </div>
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: '16px', height: '16px', backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)', borderRadius: '4px', border: '1px solid #dee2e6' }}></div>
+                            <span>Geçmiş Günler</span>
+                        </div>
                     </div>
                 </div>
 
@@ -680,10 +768,10 @@ export default function DashboardScreen({ user, onLogout }) {
                                 >
                                     <option value="">Seçiniz...</option>
                                     <option value="Temel Bankacılık">Temel Bankacılık</option>
-                                    <optgroup label="Bankacılık Hizmetleri">
-                                        <option value="Nakit Yönetimi">Nakit Yönetimi</option>
-                                        <option value="Çek Senet">Çek Senet</option>
-                                    </optgroup>                                        
+                                    <option value="grup" disabled>Bankacılık Hizmetleri</option>
+                                    <option value="Nakit Yönetimi">&nbsp;&nbsp;&nbsp;Nakit Yönetimi</option>
+                                    <option value="Çek Senet">&nbsp;&nbsp;&nbsp;Çek Senet</option> 
+                                                                            
                                 </select>
                             </div>
 
