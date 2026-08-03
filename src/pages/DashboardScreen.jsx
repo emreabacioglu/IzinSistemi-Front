@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef} from 'react';
 import api from '../api';
 
 export default function DashboardScreen({ user, onLogout }) {
@@ -35,6 +35,15 @@ export default function DashboardScreen({ user, onLogout }) {
     const [selectedStaffIds, setSelectedStaffIds] = useState([]);
 
     const [allStaff, setAllStaff] = useState([]);
+
+    const [publicHolidays, setPublicHolidays] = useState([]);
+
+    const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+    const [showPersonFilter, setShowPersonFilter] = useState(false);
+    const personFilterRef = useRef(null);
+    const dropdownRef = useRef(null);
+    
     
     
 
@@ -73,6 +82,47 @@ export default function DashboardScreen({ user, onLogout }) {
         fetchAllStaff();
     }, [user]);
 
+
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setShowProfileMenu(false);
+            }
+            if (personFilterRef.current && !personFilterRef.current.contains(event.target)) {
+                setShowPersonFilter(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+
+    const [customAlert, setCustomAlert] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info', 
+        isConfirm: false, 
+        onConfirm: null 
+    });
+
+
+    const showCustomAlert = (title, message, type = 'info', isConfirm = false, onConfirm = null) => {
+        setCustomAlert({
+            isOpen: true,
+            title,
+            message,
+            type,
+            isConfirm,
+            onConfirm
+        });
+    };
+
+
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth() + 1;
     const currentDay = currentDate.getDate();
@@ -90,15 +140,35 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
-    const publicHolidays = [
-        '01-01', // Yılbaşı
-        '04-23', // Ulusal Egemenlik ve Çocuk Bayramı
-        '05-01', // Emek ve Dayanışma Günü
-        '05-19', // Atatürk'ü Anma, Gençlik ve Spor Bayramı
-        '07-15', // Demokrasi ve Milli Birlik Günü
-        '08-30', // Zafer Bayramı
-        '10-29'  // Cumhuriyet Bayramı
-    ];
+    const fetchHolidays = async (year) => {
+        try{
+            const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/TR`);
+            if (response.ok) {
+                const holidaysData = await response.json();
+
+                const formattedHolidays = holidaysData.map(holiday => {
+                    const dateObj = new Date(holiday.date);
+                    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const day = String(dateObj.getDate()).padStart(2, '0');
+                    return {
+                        dateString: `${month}-${day}`,
+                        month: dateObj.getMonth() + 1,
+                        day: dateObj.getDate(),
+                        name: holiday.localName
+
+                    };
+                });
+
+                setPublicHolidays(formattedHolidays);
+            }
+        } catch (error) {
+            console.error('Tatil günleri çekilirken hata:', error);
+        }        
+    };
+
+    useEffect(() => {
+        fetchHolidays(selectedYear);
+    }, [selectedYear]);
 
     const processUserLeaves = (rawLeaves) => {
         if (!rawLeaves) return [];
@@ -128,6 +198,27 @@ export default function DashboardScreen({ user, onLogout }) {
     };
 
     const currentMonthLeaves = processUserLeaves(leaves);
+
+    const todayForCalc = new Date();
+    todayForCalc.setHours(0,0,0,0);
+    const usedLeavesThisYear = leaves.filter(l => {
+        const d = new Date(l.startDate);
+        return d.getFullYear() === currentYear && (l.status === 'Kesinleşen' || l.status === 'Approved');
+    }).length;
+
+    const remainingLeaves = totalLeaveDays - usedLeavesThisYear;
+
+    const upcomingLeaves = leaves.filter(l => {
+        const d = new Date(l.startDate);
+        return d >= todayForCalc && (l.status === 'Kesinleşen' || l.status === 'Approved'); //palnlanan eklenebilir
+    }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+
+    let nextLeaveText = 'Yok';
+    if (upcomingLeaves.length > 0) {
+        const nextDate = new Date(upcomingLeaves[0].startDate);
+        const nextMonthName = months.find(m => m.value === (nextDate.getMonth() + 1))?.name;
+        nextLeaveText = `${nextDate.getDate()} ${nextMonthName}`;
+    }
 
     const currentDept = isProfileSetupDone ? selectedDept : user?.department;
     const currentTitle = isProfileSetupDone ? selectedTitle : user?.title;
@@ -166,12 +257,12 @@ export default function DashboardScreen({ user, onLogout }) {
         const isClickedConfirmed = clickedStatus === 'Kesinleşen';
 
         if (currentHasEmpty && isClickedConfirmed) {
-            alert('Boş günler ile Kesinleşen izinler aynı anda seçilemez.');
+            showCustomAlert('Geçersiz Seçim', 'Boş günler ile kesinleşen izinler aynı anda seçilemez.', 'warning');
             return;
         }
 
         if (currentHasConfirmed && isClickedEmpty) {
-            alert('Kesinleşen izin ile boş günler aynı anda seçilemez.');
+            showCustomAlert('Geçersiz Seçim', 'Boş günler ile kesinleşen izinler aynı anda seçilemez.', 'warning');
             return;
         }
         setSelectedDays([...selectedDays, day]);
@@ -199,15 +290,16 @@ export default function DashboardScreen({ user, onLogout }) {
             });
 
             await Promise.all(leaveRequests);
-
-            alert(`${status === 'Planned' ? 'Planlanan' : 'Kesinleşen'} izinler başarıyla kaydedildi.`);
-
             await fetchLeaves();
+
             setIsEditMode(false);
             setSelectedDays([]);
+
+            showCustomAlert('Başarılı', `Seçili izinler "${status === 'Planned' ? 'Planlanan' : 'Kesinleşen'}" olarak kaydedildi.`, 'success');
+
         } catch (error) {
-            console.error('İzin kaydedilirken hata oluştu:', error);
-            alert('İzin kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.');
+            console.error('İzin kaydedilirken hata:', error);
+            showCustomAlert('Hata', 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyiniz.', 'danger');
         }
     };
 
@@ -244,59 +336,87 @@ export default function DashboardScreen({ user, onLogout }) {
     const handleUpdateStatus = async (newStatus) => {
         if (selectedDays.length === 0) return;
 
-        try {
-            const request = selectedDays.map(day => {
-                const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        let title = '';
+        let message = '';
 
-                return api.post('/Leave', {
-                    employeeId: user.id,
-                    startDate: leaveDate,
-                    endDate: leaveDate,
-                    requestDate: new Date().toISOString(),
-                    status:newStatus
-                });
-            });
-
-            await Promise.all(request);
-
-            await fetchLeaves();
-
-            setSelectedDays([]);
-            setIsEditMode(false);
-
-        } catch (error) {
-            console.error(`${newStatus} status update failed:`, error);
-            alert('Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyiniz.')
+        if (newStatus === 'Kesinleşen') {
+            title = 'İzin Kesinleştirme Onayı';
+            const newRemaining = remainingLeaves - selectedDays.length;
+            message = `Seçtiğiniz ${selectedDays.length} günlük izni kesinleştirmek üzeresiniz. Bu işlemden sonra kalan izin hakkınız ${newRemaining} güne düşecektir. Onaylıyor musunuz?`;
+        } else {
+            title = 'İzin Planlama Onayı';
+            message = `Seçtiğiniz ${selectedDays.length} günlük izni "Planlanan" olarak kaydetmek istediğinize emin misiniz?`;
         }
+        
+        showCustomAlert(
+            title,
+            message,
+            newStatus === 'Kesinleşen' ? 'info' : 'warning', 
+            true,
+            async () => {
+
+            try {
+                const request = selectedDays.map(day => {
+                    const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                    return api.post('/Leave', {
+                        employeeId: user.id,
+                        startDate: leaveDate,
+                        endDate: leaveDate,
+                        requestDate: new Date().toISOString(),
+                        status:newStatus
+                    });
+                });
+
+                await Promise.all(request);
+                await fetchLeaves();
+
+                setSelectedDays([]);
+                setIsEditMode(false);
+
+                showCustomAlert('Başarılı', `Seçili izinler "${newStatus}" olarak güncellendi.`, 'success');
+
+                } catch (error) {
+                    console.error(`${newStatus} status update failed:`, error);
+                    showCustomAlert('Hata', 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyiniz.', 'danger');
+                }
+            }
+        );
     };
 
-    const handleDeleteLeaves = async () => {
+    const handleDeleteLeaves = () => {
         if (selectedDays.length === 0) return;
 
-        const isUserSure = window.confirm(`Seçtiğiniz ${selectedDays.length} günlük izni iptal etmek istediğinize emin misiniz?`);
-        if (!isUserSure) return;
+        showCustomAlert(
+            'İptal Onayı',
+            `Seçtiğiniz ${selectedDays.length} günlük izni iptal etmek istediğinize emin misiniz?`,
+            'warning',
+             true,
+             async () => {
+                try {
+                    const deleteRequest = selectedDays.map(day => {
+                        const leaveToDelete = currentMonthLeaves.find(l => l.day === day);
 
-        try {
-            const deleteRequest = selectedDays.map(day => {
-                const leaveToDelete = currentMonthLeaves.find(l => l.day === day);
+                        if (leaveToDelete && leaveToDelete.id){
+                            return api.delete(`/Leave/${leaveToDelete.id}`);
+                        }
+                        return Promise.resolve();
+                    });
 
-                if (leaveToDelete && leaveToDelete.id){
-                    return api.delete(`/Leave/${leaveToDelete.id}`);
+                    await Promise.all(deleteRequest);
+                    await fetchLeaves();
+
+                    setSelectedDays([]);
+                    setIsEditMode(false);
+                    
+                    showCustomAlert('Başarılı', 'İzinler başarıyla iptal edildi.', 'success');
+
+                } catch (error) {
+                    console.error('Leave deletion failed:', error);
+                    showCustomAlert('Hata', 'İzinler iptal edilirken bir hata oluştu.', 'danger');
                 }
-                return Promise.resolve();
-            });
-
-            await Promise.all(deleteRequest);
-
-            await fetchLeaves();
-
-            setSelectedDays([]);
-            setIsEditMode(false);
-
-        } catch (error) {
-            console.error('Leave deletion failed:', error);
-            alert('İzinler iptal edilirken bir hata oluştu.')
-        }
+            }
+        );
     };
 
     useEffect(() => {
@@ -324,12 +444,11 @@ export default function DashboardScreen({ user, onLogout }) {
 
             await fetchAllStaff();
 
-            alert("Profil başarıyla güncellendi.")
-
+            showCustomAlert('Tebrikler', 'Profil başarıyla güncellendi.', 'success');
 
         } catch (error) {
             console.error("Profil güncellenirken hata:", error);
-            alert("Profil bilgileri kaydedilirken bir hata oluştu.");
+            showCustomAlert('Hata', 'Profil bilgileri kaydedilirken bir hata oluştu.', 'danger');
         }
     };
 
@@ -378,14 +497,110 @@ export default function DashboardScreen({ user, onLogout }) {
         ? filteredStaff.filter(p => selectedStaffIds.includes(p.id))
         : filteredStaff;
 
+
     return (
         <div className="container-fluid p-0 vh-100 d-flex flex-column" style={{ backgroundColor: '#F0F2F5' }}>
 
-            <header className="navbar navbar-dark sticky-top p-2 shadow" style={{ backgroundColor: colors.darkGray }}>
+            <header className="navbar navbar-dark sticky-top p-2 shadow" style={{ backgroundColor: colors.darkGray, zIndex: 1040 }}>
                 <a className="navbar-brand col-md-3 col-lg-2 me-0 px-3 fw-bold fs-5" href="#">Kurumsal İzin Sistemi</a>
-                <div className="navbar-nav px-3 flex-row gap-3">
-                    <span className="text-white small align-self-center">Hoş geldin, {currentUser.fullName}</span>
-                    <button className="btn btn-sm text-white border-white" onClick={onLogout}>Çıkış Yap</button>
+                
+                <div className="navbar-nav px-3 flex-row align-items-center">
+                    
+                    <style>
+                        {`
+                        .custom-profile-btn {
+                            cursor: pointer;
+                            border-radius: 8px;
+                            transition: background-color 0.2s ease;
+                        }
+                        .custom-profile-btn:hover {
+                            background-color: rgba(255, 255, 255, 0.06); 
+                        }
+                        
+                        .custom-dropdown {
+                            background-color: #363C42; 
+                            border: 1px solid rgba(255,255,255,0.08);
+                            border-radius: 8px;
+                            padding: 4px 0;
+                            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+                        }
+                        .custom-dropdown-item {
+                            color: #d1d5db; 
+                            font-size: 13px; 
+                            padding: 8px 16px;
+                            transition: all 0.2s ease;
+                        }
+                        .custom-dropdown-item:hover {
+                            background-color: rgba(255,255,255,0.08);
+                            color: #ffffff;
+                        }
+                        .custom-divider {
+                            border-color: rgba(255,255,255,0.08);
+                            margin: 4px 0;
+                        }
+                        
+                        /* Çıkış Yap butonu için özel yumuşatılmış hover efekti */
+                        .logout-btn:hover {
+                            background-color: rgba(225, 5, 20, 0.15) !important;
+                            color: #ff8787 !important; /* Soft bir kırmızı */
+                        }
+                        `}
+                    </style>
+
+                    {/* ref={dropdownRef} buraya eklendi ki dışarı tıklamayı algılayabilelim */}
+                    <div className="dropdown position-relative" ref={dropdownRef}>
+                        <div 
+                            className="d-flex align-items-center gap-3 user-select-none py-1 px-2 custom-profile-btn" 
+                            onClick={() => setShowProfileMenu(!showProfileMenu)}
+                        >
+                            <div className="text-end d-none d-sm-block">
+                                <div className="text-white fw-bold" style={{ fontSize: '14px' }}>
+                                    Hoş geldin, {currentUser.fullName}
+                                </div>
+                                <div className="d-flex flex-column align-items-end mt-1">
+                                    <div className="d-flex align-items-center gap-2" style={{ fontSize: '12px' }}>
+                                        <div style={{ width: '8px', height: '8px', backgroundColor: remainingLeaves > 3 ? '#62e799' : '#f3e411', borderRadius: '50%' }}></div>
+                                        <span className="text-light">Kalan İzin: <span className="fw-bold" style={{ color: remainingLeaves > 3 ? '#62e799' : '#f3e411' }}>{remainingLeaves} Gün</span></span>
+                                    </div>
+                                    <div className="text-white-50" style={{ fontSize: '11px', marginTop: '2px' }}>
+                                        En Yakın İzin: <span className="text-light fw-medium">{nextLeaveText}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="d-flex align-items-center gap-2">
+                                <div 
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-sm" 
+                                    style={{ width: '42px', height: '42px', backgroundColor: colors.primaryRed, fontSize: '15px' }}
+                                >
+                                    {currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
+                                </div>
+                                <span className="text-white-50" style={{ fontSize: '10px' }}>▼</span>
+                            </div>
+                        </div>
+
+                        <ul 
+                            className={`dropdown-menu dropdown-menu-end mt-2 custom-dropdown ${showProfileMenu ? 'd-block' : 'd-none'}`} 
+                            style={{ position: 'absolute', top: '100%', right: '0', minWidth: '160px' }}
+                        >
+                            <li>
+                                <button className="dropdown-item custom-dropdown-item d-flex align-items-center gap-2" onClick={() => { 
+                                    setModalStep(1); 
+                                    setShowProfileModal(true); 
+                                    setShowProfileMenu(false);
+                                }}>
+                                    <span style={{ fontSize: '14px' }}>⚙️</span> Profili Düzenle
+                                </button>
+                            </li>
+                            <li><hr className="dropdown-divider custom-divider" /></li>
+                            <li>
+                                {/* Çıkış Yap butonu text-danger'dan kurtuldu, .logout-btn class'ı eklendi */}
+                                <button className="dropdown-item custom-dropdown-item logout-btn d-flex align-items-center gap-2" onClick={onLogout}>
+                                    <span style={{ fontSize: '14px' }}>🚪</span> Çıkış Yap
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </header>
 
@@ -419,50 +634,6 @@ export default function DashboardScreen({ user, onLogout }) {
                             <option value="Çek Senet">&nbsp;&nbsp;&nbsp;Çek Senet</option>      
                         </select>
                     </div>
-
-                    <div className='dropdown'>
-                        <button 
-                        className='btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 fw-bold dropdown-toggle'
-                        type='button'
-                        data-bs-toggle='dropdown'
-                        aria-expanded='false'
-                        data-bs-auto-close='outside'>
-                            <span>Kişi Seç {selectedStaffIds.length > 0 && <span className='badge bg-danger ms-1'>{selectedStaffIds.length}</span>}</span>
-                        </button>
-                        <ul className='dropdown-menu p-2 shadow-sm border-0'
-                        style={{ minWidth: '220px', maxHeight: '300px', overflowY: 'auto' }}
-                        >
-                            {filteredStaff.length === 0 ? (
-                                <li className='text-muted small text-center p-2'>Bu departmanda kimse bulunamadı.</li>
-                            ):(
-                                filteredStaff.map(person => (
-                                    <li key={person.id} className='form-check m-1'>
-                                        <input
-                                            className='form-check-input shadow-none'
-                                            type='checkbox'
-                                            id={`check-${person.id}`}
-                                            checked={selectedStaffIds.includes(person.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedStaffIds([...selectedStaffIds, person.id]);
-                                                } else {
-                                                    setSelectedStaffIds(selectedStaffIds.filter(id => id !== person.id));
-
-                                                }
-                                                
-                                            }}
-                                        />
-                                        <label className='form-check-label w-100 user-select-none' htmlFor={`check-${person.id}`} style={{ cursor: 'pointer', fontSize: '13px' }}>
-                                            {person.fullName} <span className='text-muted' style={{ fontSize: '11px'}}>({person.title})</span>
-                                        </label>
-                                    </li>
-                                ))
-                            )}
-
-                        </ul>
-                    </div>
-
-
 
                     <div>
                         {!isEditMode ? (
@@ -519,12 +690,67 @@ export default function DashboardScreen({ user, onLogout }) {
                 </div>
 
                 <div className="card shadow-sm border-0" style={{ borderRadius: '15px', overflow: 'hidden' }}>
-                    <div className="table-responsive">
+                    <div className="table-responsive" style={{ minHeight: '450px'}}>
                         <table className="table table-bordered mb-0" style={{ fontSize: '13px' }}>
 
                             <thead style={{ backgroundColor: colors.lightGray, color: colors.darkGray }}>
                                 <tr>
-                                    <th className="px-3 align-middle" style={{ minWidth: '150px' }}>Çalışan Ad Soyad</th>
+                                    <th className="px-3 align-middle position-relative" style={{ minWidth: '180px' }} ref = {personFilterRef}>
+                                        <div className="d-flex align-items-center justify-content-between">
+                                            <span>Çalışan Ad Soyad</span>
+                                            <div className="d-flex align-items-center gap-2">
+                                                {selectedStaffIds.length > 0 && (
+                                                    <button
+                                                        className="btn btn-sm text-danger p-1 d-flex align-items-center me-1"
+                                                        title="Seçimi Temizle"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedStaffIds([]);
+                                                            setShowPersonFilter(false);
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: '18px', fontWeight: 'bold', lineHeight: '1' }}>×</span>
+                                                    </button>
+                                                )}
+                                                <button
+                                                    className={`btn btn-sm p-0 d-flex align-items-center ${selectedStaffIds.length > 0 ? 'text-primary' : 'text-muted'}`}
+                                                    onClick={() => setShowPersonFilter(!showPersonFilter)}
+                                                >
+                                                    <span style={{ fontSize: '12px' }}>▼</span>
+                                                </button>
+                                            </div> 
+                                        </div>
+
+                                        <ul
+                                            className={`dropdown-menu shadow border-0 mt-2 p-2 ${showPersonFilter ? 'd-block' : 'd-none'}`}
+                                            style={{ position: 'absolute', top: '100%', left: '0', minWidth: '220px', maxHeight: '300px', overflowY: 'auto', zIndex: 1050, borderRadius: '8px' }}
+                                        >
+                                            {filteredStaff.length === 0 ? (
+                                                <li className='text-muted small text-center p-2'>Bu departmanda kimse bulunamadı.</li>
+                                            ) : (
+                                                filteredStaff.map(person => (
+                                                    <li key={person.id} className='form-check m-1'>
+                                                        <input
+                                                            className='form-check-input shadow-none'
+                                                            type='checkbox'
+                                                            id={`filter-check-${person.id}`}
+                                                            checked={selectedStaffIds.includes(person.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedStaffIds([...selectedStaffIds, person.id]);
+                                                                } else {
+                                                                    setSelectedStaffIds(selectedStaffIds.filter(id => id !== person.id));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <label className='form-check-label w-100 user-select-none' htmlFor={`filter-check-${person.id}`} style={{ cursor: 'pointer', fontSize: '13px' }}>
+                                                            {person.fullName} <span className='text-muted' style={{ fontSize: '11px' }}>({person.title})</span>
+                                                        </label>
+                                                    </li>
+                                                ))
+                                            )}
+                                        </ul>
+                                    </th>
 
                                     {days.map(day => {
                                         const actualDate = new Date(selectedYear, selectedMonth - 1, day);
@@ -534,7 +760,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                         const isToday = (selectedYear === currentYear && selectedMonth === currentMonth && day === currentDay);
 
                                         const dateString = `${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                        const isHoliday = publicHolidays.includes(dateString);
+                                        const isHoliday = publicHolidays.some(h => h.month === selectedMonth && h.day === day);
                                         const isOffDay = isWeekend || isHoliday;
 
                                         return (
@@ -597,7 +823,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 const isPast = selectedYear < currentYear || (selectedYear === currentYear && selectedMonth < currentMonth) || (selectedYear === currentYear && selectedMonth === currentMonth && day < currentDay);
                                                 
                                                 const dateString = `${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                                const isHoliday = publicHolidays.includes(dateString);
+                                                const isHoliday = publicHolidays.some(h => h.month === selectedMonth && h.day === day);
                                                 const isOffDay = isWeekend || isHoliday;
 
                                                 const existingLeave = person.leaves?.find(l => l.day === day);
@@ -607,12 +833,16 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 let bgPattern = 'none';
                                                 let textColor = 'inherit';
 
-                                                if (isWeekend) {
-                                                    bgColor = '#f1f3f5'; //#e9ecef
-                                                }
-                                                else if (isHoliday){
+                                                if (isHoliday){
                                                     bgColor = '#ffe5e5'
-                                                    textColor = '#d954f'
+                                                    textColor = '#d9534f'
+
+                                                } else if (isWeekend) {
+                                                    bgColor = '#f1f3f5'; //#e9ecef
+                                                
+                                                }else if (isHoliday){
+                                                    bgColor = '#ffe5e5'
+                                                    textColor = '#d9534f'
                                                 
                                                 } else if (existingLeave) {
                                                     if (existingLeave.status === 'Kesinleşen') {
@@ -664,6 +894,32 @@ export default function DashboardScreen({ user, onLogout }) {
                                     );
                                 })}
 
+                                {displayedStaff.length < 10 && Array.from({ length: 10 - displayedStaff.length }).map((_, index) => (
+                                    <tr key={`empty-row-${index}`}>
+                                        <td className="px-3 align-middle border-end bg-white" style={{ height: '40px' }}></td>
+                                        
+                                        {days.map(day => {
+                                            const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+                                            const isWeekend = actualDate.getDay() === 0 || actualDate.getDay() === 6;
+                                            const isHoliday = publicHolidays.some(h => h.month === selectedMonth && h.day === day);
+                                            
+                                            let bgColor = '#ffffff';
+                                            if (isWeekend) bgColor = '#f1f3f5';
+                                            else if (isHoliday) bgColor = '#ffe5e5';
+
+                                            return (
+                                                <td 
+                                                    key={`empty-${day}`} 
+                                                    className="border-end" 
+                                                    style={{ backgroundColor: bgColor }}
+                                                ></td>
+                                            );
+                                        })}
+                                        
+                                        <td className="border-start bg-light"></td>
+                                    </tr>
+                                ))}
+
                                 <tr style={{ backgroundColor: '#f8f9fa', borderTop: '2px solid #dee2e6'}}>
                                     <td className='text-center fw-bold px-3 py-2 text-muted'>Günlük İzinli Sayısı:</td>
                                     {days.map(day => {
@@ -710,6 +966,28 @@ export default function DashboardScreen({ user, onLogout }) {
                             <span>Geçmiş Günler</span>
                         </div>
                     </div>
+                    {(() => {
+                        const currentMonthHolidays = publicHolidays.filter(h => h.month === selectedMonth);
+                        if (currentMonthHolidays.length === 0) return null;
+
+                        const groupedHolidays = currentMonthHolidays.reduce((acc, curr) => {
+                            if (!acc[curr.name]) acc[curr.name] = [];
+                            acc[curr.name].push(curr.day);
+                            return acc;
+                        }, {});
+                        return (
+                            <div className="p-3 bg-white border-top text-dark" style={{ fontSize: '13px' }}>
+                                <div className="fw-bold mb-2" style={{ color: '#E10514' }}>🎉 Bu Ayki Resmi ve Dini Tatiller:</div>
+                                <ul className="mb-0 ps-3" style={{ listStyleType: 'square' }}>
+                                    {Object.entries(groupedHolidays).map(([name, days]) => (
+                                        <li key={name}>
+                                            <span className="fw-bold">{days.join(', ')} {months.find(m => m.value === selectedMonth)?.name}:</span> {name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        );
+                    })()}
                 </div>
 
             </main>
@@ -861,9 +1139,61 @@ export default function DashboardScreen({ user, onLogout }) {
                     )}
                 </div>
             </div>
-
         )}
+            {customAlert.isOpen && (
+                <div 
+                    className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" 
+                    style={{ backgroundColor: 'rgba(30, 33, 36, 0.6)', backdropFilter: 'blur(5px)', zIndex: 1055 }}
+                >
+                    <div 
+                        className="card border-0 shadow-lg text-center p-4" 
+                        style={{ width: '90%', maxWidth: '400px', borderRadius: '16px', animation: 'fadeIn 0.2s ease-out' }}
+                    >
+                        <div className="mb-3">
+                            {customAlert.type === 'success' && <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', backgroundColor: '#e6f8ed', color: '#198754', fontSize: '28px' }}>✓</div>}
+                            {customAlert.type === 'warning' && <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', backgroundColor: '#fff8e6', color: '#ffc107', fontSize: '28px' }}>!</div>}
+                            {customAlert.type === 'danger' && <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', backgroundColor: '#ffe6e6', color: '#dc3545', fontSize: '28px' }}>✖</div>}
+                            {customAlert.type === 'info' && <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center" style={{ width: '60px', height: '60px', backgroundColor: '#e6f0ff', color: '#0d6efd', fontSize: '28px' }}>i</div>}
+                        </div>
+                        
+                        <h5 className="fw-bold text-dark mb-2">{customAlert.title}</h5>
+                        <p className="text-muted small mb-4">{customAlert.message}</p>
+                        
+                        <div className="d-flex justify-content-center gap-3">
+                            {customAlert.isConfirm ? (
+                                <>
+                                    <button 
+                                        className="btn btn-light fw-bold px-4" 
+                                        onClick={() => setCustomAlert({ ...customAlert, isOpen: false })}
+                                    >
+                                        Vazgeç
+                                    </button>
+                                    <button 
+                                        className={`btn fw-bold px-4 ${customAlert.type === 'danger' ? 'btn-danger' : 'btn-primary'}`} 
+                                        onClick={() => {
+                                            if (customAlert.onConfirm) customAlert.onConfirm();
+                                            setCustomAlert({ ...customAlert, isOpen: false });
+                                        }}
+                                    >
+                                        Onayla
+                                    </button>
+                                </>
+                            ) : (
+                                <button 
+                                    className="btn btn-primary fw-bold w-100" 
+                                    onClick={() => setCustomAlert({ ...customAlert, isOpen: false })}
+                                >
+                                    Tamam
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <style>{`@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }`}</style>
 
-    </div>
+                </div>
+
+            )}
+        </div>
+
     );
 }
