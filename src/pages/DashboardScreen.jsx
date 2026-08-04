@@ -206,7 +206,7 @@ export default function DashboardScreen({ user, onLogout }) {
             const today = new Date();
             today.setHours(0,0,0,0);
 
-            if (leave.status === 'Planned' && leaveDate <= today){
+            if ((leave.status === 'Planned' || leave.status === 'Planlanan') && leaveDate <= today){
                 return false;
             }
             return leaveDate.getFullYear() === selectedYear && (leaveDate.getMonth() + 1) === selectedMonth;
@@ -408,6 +408,25 @@ export default function DashboardScreen({ user, onLogout }) {
 
     const handleUpdateStatus = async (newStatus) => {
         if (selectedDays.length === 0) return;
+
+        if (newStatus === 'Planlanan') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const hasInvalidDay = selectedDays.some(day => {
+                const selectedDate = new Date(selectedYear, selectedMonth - 1, day);
+                return selectedDate.getTime() <= today.getTime();
+            });
+
+            if (hasInvalidDay) {
+                showCustomAlert(
+                    'Geçersiz İşlem', 
+                    'Bugüne veya geçmiş tarihlere Planlanan izin ekleyemezsiniz. Planlanan izin eklemek için lütfen ileri bir tarih seçiniz.', 
+                    'warning'
+                );
+                return; 
+            }
+        }
 
         const ruleCheck = checkLeaveRules(selectedDays);
         
