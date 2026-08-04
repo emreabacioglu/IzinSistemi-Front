@@ -43,7 +43,19 @@ export default function DashboardScreen({ user, onLogout }) {
     const [showPersonFilter, setShowPersonFilter] = useState(false);
     const personFilterRef = useRef(null);
     const dropdownRef = useRef(null);
+
+    const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+
+    // Admin Paneli State'leri
+    const [showAdminPanel, setShowAdminPanel] = useState(false);
+    const [adminActiveTab, setAdminActiveTab] = useState('users');
+    const [editingDeptId, setEditingDeptId] = useState(null);
+    const [newDeptValue, setNewDeptValue] = useState('');
     
+    const [minOfficeRate, setMinOfficeRate] = useState(() => {
+        const saved = localStorage.getItem('minOfficeRate');
+        return saved !== null ? parseInt(saved, 10) : 30; 
+    });
     
     
 
@@ -83,6 +95,22 @@ export default function DashboardScreen({ user, onLogout }) {
     }, [user]);
 
 
+    useEffect(() => {
+        const savedUserStr = localStorage.getItem('user');
+        if (savedUserStr) {
+            try {
+                const savedUser = JSON.parse(savedUserStr);
+                if (savedUser.birthDate) setBirthDate(savedUser.birthDate);
+                if (savedUser.birthMonth) setBirthMonth(savedUser.birthMonth);
+                if (savedUser.totalLeaveDays) setTotalLeaveDays(savedUser.totalLeaveDays);
+                if (savedUser.leaveResetDate) setLeaveResetDate(savedUser.leaveResetDate);
+                if (savedUser.leaveResetMonth) setLeaveResetMonth(savedUser.leaveResetMonth);
+            } catch (error) {
+                console.error("Local ayarlar yüklenemedi:", error);
+            }
+        }
+    }, []);
+    
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -332,49 +360,125 @@ export default function DashboardScreen({ user, onLogout }) {
     const { canPlan, canConfirm, canCancel } = getSelectionActions();
 
 
+    const checkLeaveRules = (daysToCheck) => {
+        const deptStaff = processedStaff.filter(p => p.department === currentUser.department);
+        const totalDeptStaff = deptStaff.length;
+        
+        const requiredMinInOffice = Math.ceil(totalDeptStaff * (minOfficeRate / 100)); 
+        const roleStaff = deptStaff.filter(p => p.title === currentUser.title);
+        const totalRoleStaff = roleStaff.length;
+
+        for (let day of daysToCheck) {
+            let othersOnLeaveInDept = 0;
+            let othersOnLeaveInRole = 0;
+
+            deptStaff.forEach(person => {
+                if (person.id !== currentUser.id) {
+                    const hasLeave = person.leaves?.some(l => l.day === day && l.status === 'Kesinleşen');
+                    if (hasLeave) {
+                        othersOnLeaveInDept++;
+                        if (person.title === currentUser.title) {
+                            othersOnLeaveInRole++;
+                        }
+                    }
+                }
+            });
+
+            const remainingInOffice = totalDeptStaff - (othersOnLeaveInDept + 1);
+            
+            if (remainingInOffice < requiredMinInOffice) {
+                const monthName = months.find(m => m.value === selectedMonth)?.name;
+                return {
+                    hasWarning: true,
+                    message: `${day} ${monthName} tarihinde güncel ofiste kalma kuralı (%${minOfficeRate}) sınırına ulaşıldı. Lütfen izin talebinizle ilgili yöneticinize bilgi verin.`
+                };
+            }
+
+            if (totalRoleStaff > 1 && (totalRoleStaff - (othersOnLeaveInRole + 1) < 1)) {
+                const monthName = months.find(m => m.value === selectedMonth)?.name;
+                return {
+                    hasWarning: true,
+                    message: `${day} ${monthName} tarihinde departmanda ofiste kalan başka "${currentUser.title}" unvanlı çalışan kalmıyor. Lütfen izin talebinizle ilgili yöneticinize bilgi verin.`
+                };
+            }
+        }
+
+        return { hasWarning: false };
+    };
 
     const handleUpdateStatus = async (newStatus) => {
         if (selectedDays.length === 0) return;
 
+        const ruleCheck = checkLeaveRules(selectedDays);
+        
         let title = '';
         let message = '';
+        let alertType = 'info';
 
-        if (newStatus === 'Kesinleşen') {
-            title = 'İzin Kesinleştirme Onayı';
+        if (ruleCheck.hasWarning) {
+            title = '⚠️ Kural Sınırı Uyarısı';
             const newRemaining = remainingLeaves - selectedDays.length;
-            message = `Seçtiğiniz ${selectedDays.length} günlük izni kesinleştirmek üzeresiniz. Bu işlemden sonra kalan izin hakkınız ${newRemaining} güne düşecektir. Onaylıyor musunuz?`;
+            
+            message = `${ruleCheck.message}\n\nBuna rağmen seçtiğiniz ${selectedDays.length} günlük izni "${newStatus}" olarak kaydetmek istediğinize emin misiniz?`;
+            
+            if (newStatus === 'Kesinleşen') {
+                message += ` (İşlemden sonra kalan izin hakkınız ${newRemaining} güne düşecektir.)`;
+            }
+            alertType = 'warning';
+
         } else {
-            title = 'İzin Planlama Onayı';
-            message = `Seçtiğiniz ${selectedDays.length} günlük izni "Planlanan" olarak kaydetmek istediğinize emin misiniz?`;
+
+            if (newStatus === 'Kesinleşen') {
+                title = 'İzin Kesinleştirme Onayı';
+                const newRemaining = remainingLeaves - selectedDays.length;
+                message = `Seçtiğiniz ${selectedDays.length} günlük izni kesinleştirmek üzeresiniz. Bu işlemden sonra kalan izin hakkınız ${newRemaining} güne düşecektir. Onaylıyor musunuz?`;
+                alertType = 'info';
+            } else {
+                title = 'İzin Planlama Onayı';
+                message = `Seçtiğiniz ${selectedDays.length} günlük izni "Planlanan" olarak kaydetmek istediğinize emin misiniz?`;
+                alertType = 'warning';
+            }
         }
         
         showCustomAlert(
             title,
             message,
-            newStatus === 'Kesinleşen' ? 'info' : 'warning', 
+            alertType, 
             true,
             async () => {
 
             try {
-                const request = selectedDays.map(day => {
-                    const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const request = selectedDays.map(day => {
+                        const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const existingLeave = currentMonthLeaves.find(l => l.day === day);
 
-                    return api.post('/Leave', {
-                        employeeId: user.id,
-                        startDate: leaveDate,
-                        endDate: leaveDate,
-                        requestDate: new Date().toISOString(),
-                        status:newStatus
+                        if (existingLeave && existingLeave.id) {
+                            return api.put(`/Leave/${existingLeave.id}`, {
+                                id: existingLeave.id,
+                                employeeId: user.id,
+                                startDate: leaveDate,
+                                endDate: leaveDate,
+                                requestDate: new Date().toISOString(),
+                                status: newStatus
+                            });
+                        } else {
+                            return api.post('/Leave', {
+                                employeeId: user.id,
+                                startDate: leaveDate,
+                                endDate: leaveDate,
+                                requestDate: new Date().toISOString(),
+                                status: newStatus
+                            });
+                        }
                     });
-                });
 
-                await Promise.all(request);
-                await fetchLeaves();
+                    await Promise.all(request);
+                    await fetchLeaves();
 
-                setSelectedDays([]);
-                setIsEditMode(false);
+                    setSelectedDays([]);
+                    setIsEditMode(false);
 
-                showCustomAlert('Başarılı', `Seçili izinler "${newStatus}" olarak güncellendi.`, 'success');
+                    showCustomAlert('Başarılı', `Seçili izinler "${newStatus}" olarak güncellendi.`, 'success');
 
                 } catch (error) {
                     console.error(`${newStatus} status update failed:`, error);
@@ -429,13 +533,31 @@ export default function DashboardScreen({ user, onLogout }) {
     const handleCompleteProfile = async (e) => {
         if(e) e.preventDefault(); 
 
+        const formattedBirthDate = (birthDate && birthMonth) 
+            ? `2004-${String(birthMonth).padStart(2, '0')}-${String(birthDate).padStart(2, '0')}` 
+            : null;
+
+        const formattedLeaveReset = (leaveResetDate && leaveResetMonth) 
+            ? `2004-${String(leaveResetMonth).padStart(2, '0')}-${String(leaveResetDate).padStart(2, '0')}` 
+            : null;
+
         try {
             await api.put(`/Auth/UpdateProfile/${user.id}`, {
                 department: selectedDept,
-                title: selectedTitle
+                title: selectedTitle,
+                totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
+                birthDate: formattedBirthDate,
+                leaveResetDate: formattedLeaveReset
             });
 
-            const updatedUser = { ...user, department: selectedDept, title: selectedTitle};
+            const updatedUser = { 
+                ...user, 
+                department: selectedDept, 
+                title: selectedTitle,
+                birthDate: formattedBirthDate,
+                leaveResetDate: formattedLeaveReset,
+                leaveResetMonth: leaveResetMonth
+            };
             localStorage.setItem('user', JSON.stringify(updatedUser));
 
             setIsProfileSetupDone(true);
@@ -449,6 +571,47 @@ export default function DashboardScreen({ user, onLogout }) {
         } catch (error) {
             console.error("Profil güncellenirken hata:", error);
             showCustomAlert('Hata', 'Profil bilgileri kaydedilirken bir hata oluştu.', 'danger');
+        }
+    };
+
+    const handleUpdateSettings = async (e) => {
+        if(e) e.preventDefault();
+        
+        const formattedBirthDate = (birthDate && birthMonth) 
+            ? `2004-${String(birthMonth).padStart(2, '0')}-${String(birthDate).padStart(2, '0')}` 
+            : null;
+
+        const formattedLeaveReset = (leaveResetDate && leaveResetMonth) 
+            ? `2004-${String(leaveResetMonth).padStart(2, '0')}-${String(leaveResetDate).padStart(2, '0')}` 
+            : null;
+
+        try {
+            await api.put(`/Auth/UpdateProfile/${user.id}`, {
+                department: selectedDept,
+                title: selectedTitle,
+                totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
+                birthDate: formattedBirthDate,
+                leaveResetDate: formattedLeaveReset
+            });
+
+            const updatedUser = { 
+                ...user, 
+                department: selectedDept, 
+                title: selectedTitle,
+                birthDate: formattedBirthDate,
+                leaveResetDate: formattedLeaveReset
+            };
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+
+            setFilterDepartment(selectedDept);
+            await fetchAllStaff();
+            setShowEditProfileModal(false); // Yeni ekranı kapatır
+
+            showCustomAlert('Başarılı', 'Profil ayarlarınız başarıyla güncellendi.', 'success');
+
+        } catch (error) {
+            console.error("Ayarlar güncellenirken hata:", error);
+            showCustomAlert('Hata', 'Ayarlar kaydedilirken bir hata oluştu.', 'danger');
         }
     };
 
@@ -496,6 +659,145 @@ export default function DashboardScreen({ user, onLogout }) {
     const displayedStaff = selectedStaffIds.length > 0 
         ? filteredStaff.filter(p => selectedStaffIds.includes(p.id))
         : filteredStaff;
+
+
+    // --- ADMİN PANELİ API FONKSİYONLARI ---
+    const handleToggleAdmin = (person) => {
+        const isCurrentlyAdmin = person.title === 'Yönetici' || person.isAdmin;
+        const actionText = isCurrentlyAdmin ? "Yetkisini Almak" : "Admin Yapmak";
+        
+        showCustomAlert(
+            'Yetki Değişimi Onayı',
+            `${person.fullName} isimli çalışanın ${actionText} istediğinize emin misiniz?`,
+            'warning',
+            true,
+            async () => {
+                try {
+                    await api.put(`/Auth/UpdateProfile/${person.id}`, {
+                        department: person.department,
+                        title: isCurrentlyAdmin ? 'Analist' : 'Yönetici'
+                    });
+                    await fetchAllStaff();
+                    showCustomAlert('Başarılı', 'Yetki başarıyla güncellendi.', 'success');
+                } catch (error) {
+                    showCustomAlert('Hata', 'Yetki güncellenirken hata oluştu.', 'danger');
+                }
+            }
+        );
+    };
+
+    const handleDeleteEmployee = (person) => {
+        showCustomAlert(
+            'İlişik Kesme Onayı',
+            `${person.fullName} isimli çalışanın sistemle ilişiğini kesmek istediğinize emin misiniz? Bu işlem geri alınamaz!`,
+            'danger',
+            true,
+            async () => {
+                try {
+                    await api.delete(`/Employee/${person.id}`);
+                    await fetchAllStaff();
+                    showCustomAlert('Başarılı', 'Çalışan başarıyla silindi.', 'success');
+                } catch (error) {
+                    showCustomAlert('Hata', 'Çalışan silinirken hata oluştu.', 'danger');
+                }
+            }
+        );
+    };
+
+    const handleSaveDepartment = async (person) => {
+        try {
+            await api.put(`/Auth/UpdateProfile/${person.id}`, {
+                department: newDeptValue,
+                title: person.title
+            });
+            setEditingDeptId(null);
+            await fetchAllStaff();
+            showCustomAlert('Başarılı', 'Departman başarıyla güncellendi.', 'success');
+        } catch (error) {
+            showCustomAlert('Hata', 'Departman güncellenirken hata oluştu.', 'danger');
+        }
+    };
+
+
+    const handleExportExcel = () => {
+
+        let csvContent = "\uFEFF"; // UTF-8 BOM for Excel compatibility
+        
+        let row2 = [" ", " ", " ", " "];
+        let row1 = ["Ad Soyad", "Departman", "Unvan", " "];
+        const dayNamesShort = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+
+        days.forEach(day => {
+            row1.push(day.toString());
+
+            const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+            row2.push(dayNamesShort[actualDate.getDay()]);
+        });
+
+        row1.push(" ");
+        row1.push("Bu Ay Toplam");
+
+        row2.push(" ");
+        row2.push(" ");
+
+        csvContent += row1.join(";") + "\n";
+        csvContent += row2.join(";") + "\n";
+
+        displayedStaff.forEach(person => {
+
+            const confirmedLeavesCount = person.leaves?.filter(l => l.status === 'Kesinleşen').length || 0;
+
+            let rowData = [
+                person.fullName,
+                person.department || "-",
+                person.title || "-",
+                " "
+            ];
+
+            days.forEach(day => {
+                const actualDate = new Date(selectedYear, selectedMonth - 1, day);
+                const dayOfWeek = actualDate.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isHoliday = publicHolidays.some(h => h.month === selectedMonth && h.day === day);
+                
+                const existingLeave = person.leaves?.find(l => l.day === day);
+                
+                let cellValue = "";
+                
+                if (existingLeave) {
+                    if (existingLeave.status === 'Kesinleşen') {
+                        cellValue = "Kesinleşen";
+                    } else if (existingLeave.status === 'Planlanan') {
+                        cellValue = "Planlanan";
+                    }
+                } else if (isHoliday) {
+                    cellValue = "Resmi Tatil";
+                } else if (isWeekend) {
+                    cellValue = "Hafta Sonu";
+                }
+                
+                rowData.push(cellValue);
+            });
+
+            rowData.push("");
+            rowData.push(confirmedLeavesCount.toString());
+
+            csvContent += rowData.join(";") + "\n";
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const monthName = months.find(m => m.value === selectedMonth)?.name;
+
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Izin_Takvimi_${filterDepartment}_${monthName}_${selectedYear}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showCustomAlert('Başarılı', 'Excel raporu başarıyla indirildi.', 'success');
+    }
 
 
     return (
@@ -583,10 +885,32 @@ export default function DashboardScreen({ user, onLogout }) {
                             className={`dropdown-menu dropdown-menu-end mt-2 custom-dropdown ${showProfileMenu ? 'd-block' : 'd-none'}`} 
                             style={{ position: 'absolute', top: '100%', right: '0', minWidth: '160px' }}
                         >
+                            {(user?.title === 'Yönetici' || user?.isAdmin) && (
+                                <>
+                                    <li>
+                                        <button className="dropdown-item custom-dropdown-item d-flex align-items-center gap-2" style={{ color: '#ffc107' }} onClick={() => { 
+                                            setShowAdminPanel(true);
+                                            setShowProfileMenu(false);
+                                        }}>
+                                            <span style={{ fontSize: '14px' }}>👑</span> Admin Paneli
+                                        </button>
+                                    </li>
+                                    <li><hr className="dropdown-divider custom-divider" /></li>
+                                </>
+                            )}
                             <li>
                                 <button className="dropdown-item custom-dropdown-item d-flex align-items-center gap-2" onClick={() => { 
-                                    setModalStep(1); 
-                                    setShowProfileModal(true); 
+                                    const localUser = JSON.parse(localStorage.getItem('user')) || {};
+
+                                    setSelectedDept(user?.department && user.department !== 'Belirtilmedi' ? user.department : '');
+                                    setSelectedTitle(user?.title || '');
+                                    setTotalLeaveDays(localUser.totalLeaveDays || 14);
+                                    setLeaveResetDate(localUser.leaveResetDate || '');
+                                    setLeaveResetMonth(localUser.leaveResetMonth || '');
+                                    setBirthDate(localUser.birthDate || '');
+                                    setBirthMonth(localUser.birthMonth || '');
+
+                                    setShowEditProfileModal(true); 
                                     setShowProfileMenu(false);
                                 }}>
                                     <span style={{ fontSize: '14px' }}>⚙️</span> Profili Düzenle
@@ -633,6 +957,17 @@ export default function DashboardScreen({ user, onLogout }) {
                             <option value="Nakit Yönetimi">&nbsp;&nbsp;&nbsp;Nakit Yönetimi</option>
                             <option value="Çek Senet">&nbsp;&nbsp;&nbsp;Çek Senet</option>      
                         </select>
+
+                        {(user?.title === 'Yönetici' || user?.isAdmin) && (
+                                <button 
+                                    className="btn btn-sm btn-outline-success fw-bold ms-3 d-flex align-items-center gap-2"
+                                    onClick={handleExportExcel}
+                                    title="Görüntülenen listeyi Excel olarak indir"
+                                >
+                                    <span style={{fontSize: '14px'}}>📥</span> Rapor İndir
+                                </button>
+                            )}
+
                     </div>
 
                     <div>
@@ -864,11 +1199,24 @@ export default function DashboardScreen({ user, onLogout }) {
                                                     else cursorStyle = 'pointer';
                                                 }
 
+                                                let isBirthday = false;
+                                                if (person.id === currentUser.id && birthDate && birthMonth) {
+                                                    isBirthday = (parseInt(birthDate) === day && parseInt(birthMonth) === selectedMonth);
+                                                } else {
+                
+                                                    if (person.birthDate) {
+                                                        const bDate = new Date(person.birthDate);
+                                                        isBirthday = (bDate.getDate() === day && (bDate.getMonth() + 1) === selectedMonth);
+                                                    } else if (person.birthDay && person.birthMonth) {
+                                                        isBirthday = (person.birthDay === day && person.birthMonth === selectedMonth);
+                                                    }
+                                                }
+
                                                 return (
                                                     <td
                                                         key={day}
                                                         onClick={() => isCurrentUser && handleCellClick(day, isPast, isOffDay, existingLeave?.status)}
-                                                        className="text-center align-middle p-0 border-end"
+                                                        className="text-center align-middle p-0 border-end position-relative"
                                                         style={{
                                                             height: '40px',
                                                             backgroundColor: bgColor,
@@ -876,13 +1224,31 @@ export default function DashboardScreen({ user, onLogout }) {
                                                             color: textColor,
                                                             cursor: cursorStyle,
                                                             transition: 'all 0.2s ease-in-out',
-
-                                                            boxShadow: 'none' //isHoliday ? `inset 0 0 0 2px ${colors.primaryRed}` : 'none' //çerçece kısmı burası 
+                                                            boxShadow: 'none' 
                                                         }}
                                                     >
                                                         {isEditMode && isCurrentlySelected && (
                                                             <span className="fw-bold text-dark" style={{ fontSize: '1.25rem' }}>✓</span>
                                                         )}
+
+                                                        {isBirthday && (
+                                                            <span 
+                                                                title="Doğum Günü! 🎉"
+                                                                style={{ 
+                                                                    position: 'absolute', 
+                                                                    top: '50%',          
+                                                                    left: '50%',         
+                                                                    transform: 'translate(-50%, -50%)', 
+                                                                    fontSize: '18px',    
+                                                                    lineHeight: '1',
+                                                                    zIndex: 1,
+                                                                    opacity: isCurrentlySelected ? 0.3 : 1
+                                                                }}
+                                                            >
+                                                                🎂
+                                                            </span>
+                                                        )}
+
                                                     </td>
                                                 );
                                             })}
@@ -1140,10 +1506,288 @@ export default function DashboardScreen({ user, onLogout }) {
                 </div>
             </div>
         )}
+
+            {showEditProfileModal && (
+            <div
+                className='position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center'
+                style={{ backgroundColor: 'rgba(30, 33, 36, 0.5)', backdropFilter: 'blur(8px)', zIndex: 9999 }}
+            >
+                <div
+                    className='card border-0 p-4 shadow-lg position-relative'
+                    style={{ maxWidth: '650px', width: '95%', borderRadius: '16px', backgroundColor: '#FFFFFF', animation: 'fadeIn 0.2s ease-out' }}
+                >
+                    {/* Çarpı (İptal/Kapatma) Butonu */}
+                    <button 
+                        type="button"
+                        className="btn btn-sm btn-light position-absolute d-flex align-items-center justify-content-center" 
+                        style={{ top: '15px', right: '15px', width: '32px', height: '32px', borderRadius: '50%' }}
+                        onClick={() => setShowEditProfileModal(false)}
+                        title="Değişiklikleri İptal Et"
+                    >
+                        <span className="fw-bold text-dark" style={{ fontSize: '16px' }}>✕</span>
+                    </button>
+
+                    <div className="text-center mb-4 mt-2">
+                        <h4 className='fw-bold mb-1' style={{color: '#2C3238'}}>⚙️ Profil ve İzin Ayarları</h4>
+                        <p className='text-muted small mb-0'>
+                            Bilgilerinizi ve kişisel tercihlerinizi tek ekrandan yönetin.
+                        </p>
+                    </div>
+
+                    <form onSubmit={handleUpdateSettings}>
+                        <div className="row">
+                            <div className="col-md-6 mb-3">
+                                <label className="form-label fw-bold small text-dark">Departmanınız <span className="text-danger">*</span></label>
+                                <select 
+                                    className="form-select shadow-none border-1 py-2"
+                                    style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                    value={selectedDept}
+                                    onChange={(e) => setSelectedDept(e.target.value)}
+                                    required
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    <option value="Temel Bankacılık">Temel Bankacılık</option>
+                                    <option value="Nakit Yönetimi">Nakit Yönetimi</option>
+                                    <option value="Çek Senet">Çek Senet</option> 
+                                </select>
+                            </div>
+                            <div className="col-md-6 mb-3">
+                                <label className="form-label fw-bold small text-dark">Unvanınız <span className="text-danger">*</span></label>
+                                <select 
+                                    className="form-select shadow-none border-1 py-2"
+                                    style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }}
+                                    value={selectedTitle}
+                                    onChange={(e) => setSelectedTitle(e.target.value)}
+                                    required
+                                >
+                                    <option value="">Seçiniz...</option>
+                                    <option value="Yönetici">Yönetici</option>
+                                    <option value="Analist">Analist</option>
+                                    <option value="Yazılımcı">Yazılımcı</option>              
+                                </select>
+                            </div>
+                        </div>
+
+                        <hr className="text-muted opacity-25 my-3" />
+
+                        <div className="row">
+                            <div className="col-md-4 mb-3">
+                                <label className="form-label fw-bold small text-dark">Yıllık İzin Hakkı</label>
+                                <input type="number" min="0" max="365" className="form-control shadow-none border-1 py-2 fw-bold text-center" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={totalLeaveDays} onChange={(e) => setTotalLeaveDays(e.target.value)} />
+                            </div>
+                            <div className="col-md-8 mb-3">
+                                <label className="form-label fw-bold small text-dark">İzin Yenilenme Tarihi</label>
+                                <div className="d-flex gap-2">
+                                    <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={leaveResetDate} onChange={(e) => setLeaveResetDate(e.target.value)}>
+                                        <option value="">Gün</option>
+                                        {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                    <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={leaveResetMonth} onChange={(e) => setLeaveResetMonth(e.target.value)}>
+                                        <option value="">Ay</option>
+                                        {months.map(m => <option key={m.value} value={m.value}>{m.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="form-label fw-bold small text-dark">Doğum Günü (Tabloda 🎂 görünmesi için)</label>
+                            <div className="d-flex gap-2">
+                                <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6', width: '120px' }} value={birthDate} onChange={(e) => setBirthDate(e.target.value)}>
+                                    <option value="">Gün</option>
+                                    {Array.from({ length: getDaysForMonth(birthMonth) }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <select className="form-select shadow-none border-1 py-2" style={{ backgroundColor: '#F8F9FA', borderColor: '#dee2e6' }} value={birthMonth} onChange={(e) => {
+                                        setBirthMonth(e.target.value);
+                                        if (birthDate > getDaysForMonth(e.target.value)) setBirthDate('');
+                                    }}>
+                                    <option value="">Ay</option>
+                                    {months.map(m => <option key={m.value} value={m.value}>{m.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" className="btn w-100 fw-bold py-3 shadow-sm" style={{ backgroundColor: '#E10514', color: '#FFFFFF', borderRadius: '8px' }}>
+                            Tüm Değişiklikleri Kaydet
+                        </button>
+                    </form>
+                </div>
+            </div>
+        )}
+
+            {showAdminPanel && (
+            <div className='position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center' style={{ backgroundColor: 'rgba(30, 33, 36, 0.7)', backdropFilter: 'blur(8px)', zIndex: 9999 }}>
+                <div className='card border-0 shadow-lg position-relative d-flex flex-column' style={{ width: '95%', maxWidth: '1100px', height: '85vh', borderRadius: '16px', backgroundColor: '#F8F9FA', animation: 'fadeIn 0.2s ease-out' }}>
+                    
+                    {/* Header Kısmı */}
+                    <div className="p-4 border-bottom bg-white d-flex justify-content-between align-items-center" style={{ borderTopLeftRadius: '16px', borderTopRightRadius: '16px' }}>
+                        <div>
+                            <h4 className='fw-bold mb-1' style={{color: '#2C3238'}}>👑 Sistem ve Ekip Yönetimi</h4>
+                            <p className='text-muted small mb-0'>Şirket kurallarını, departmanları ve yetkileri buradan yönetebilirsiniz.</p>
+                        </div>
+                        <button type="button" className="btn btn-light d-flex align-items-center justify-content-center shadow-sm" style={{ width: '36px', height: '36px', borderRadius: '50%' }} onClick={() => setShowAdminPanel(false)} title="Kapat">
+                            <span className="fw-bold text-dark">✕</span>
+                        </button>
+                    </div>
+
+                    {/* Sekmeler (Tabs) */}
+                    <div className="bg-white px-4 border-bottom">
+                        <ul className="nav nav-underline gap-3">
+                            <li className="nav-item">
+                                <button className={`nav-link fw-bold ${adminActiveTab === 'users' ? 'active text-danger border-danger' : 'text-muted'}`} onClick={() => setAdminActiveTab('users')} style={{ paddingBottom: '12px' }}>
+                                    👥 Ekip Yönetimi
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button className={`nav-link fw-bold ${adminActiveTab === 'settings' ? 'active text-danger border-danger' : 'text-muted'}`} onClick={() => setAdminActiveTab('settings')} style={{ paddingBottom: '12px' }}>
+                                    ⚙️ Sistem ve İzin Kuralları
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    {/* İçerik Alanı */}
+                    <div className="p-4 flex-grow-1 overflow-auto">
+                        
+                        {/* 1. SEKME: KULLANICILAR */}
+                        {adminActiveTab === 'users' && (
+                            <div className="card border-0 shadow-sm rounded-4 overflow-hidden">
+                                <div className="table-responsive">
+                                    <table className="table table-hover align-middle mb-0 bg-white" style={{ fontSize: '13.5px' }}>
+                                        <thead className="table-light text-muted">
+                                            <tr>
+                                                <th className="px-4 py-3">Çalışan</th>
+                                                <th className="py-3">Departman & Rol</th>
+                                                <th className="py-3 text-center">Kalan İzin</th>
+                                                <th className="py-3 text-center">Yetki Devri</th>
+                                                <th className="px-4 py-3 text-end">İşlemler</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allStaff.map(person => (
+                                                <tr key={person.id}>
+                                                    <td className="px-4 fw-medium text-dark">
+                                                        {person.fullName}
+                                                        {person.id === currentUser.id && <span className="badge bg-danger ms-2" style={{ fontSize: '9px' }}>SEN</span>}
+                                                    </td>
+                                                    <td>
+                                                        <div className="fw-bold text-dark">{person.department || 'Belirtilmedi'}</div>
+                                                        <div className="text-muted" style={{ fontSize: '11px' }}>{person.title || 'Belirtilmedi'}</div>
+                                                    </td>
+                                                    <td className="text-center">
+                                                        <span className="badge bg-light text-dark border px-2 py-1" style={{ fontSize: '12px' }}>
+                                                            {/* Not: Backend'den kalan izin geliyorsa buraya bağlanacak, şimdilik statik 14 eksi kullanılan gösterilir */}
+                                                            {14 - (person.leaves?.filter(l => l.status === 'Kesinleşen').length || 0)} Gün
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="text-center">
+                                                        <div className="form-check form-switch d-flex justify-content-center m-0">
+                                                            <input 
+                                                                className="form-check-input" 
+                                                                type="checkbox" 
+                                                                role="switch" 
+                                                                checked={person.title === 'Yönetici' || person.isAdmin} 
+                                                                onChange={() => handleToggleAdmin(person)}
+                                                                disabled={person.id === currentUser.id} 
+                                                                title="Admin Yetkisi Ver/Al"
+                                                            />
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="px-4 text-end">
+                                                        {editingDeptId === person.id ? (
+                                                            <div className="d-flex align-items-center justify-content-end gap-2">
+                                                                <select 
+                                                                    className="form-select form-select-sm shadow-none" 
+                                                                    style={{ width: '150px' }} 
+                                                                    value={newDeptValue} 
+                                                                    onChange={(e) => setNewDeptValue(e.target.value)}
+                                                                >
+                                                                    <option value="Temel Bankacılık">Temel Bankacılık</option>
+                                                                    <option value="Nakit Yönetimi">Nakit Yönetimi</option>
+                                                                    <option value="Çek Senet">Çek Senet</option> 
+                                                                </select>
+                                                                <button className="btn btn-sm btn-success fw-bold" onClick={() => handleSaveDepartment(person)}>✓</button>
+                                                                <button className="btn btn-sm btn-light fw-bold" onClick={() => setEditingDeptId(null)}>✕</button>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <button className="btn btn-sm btn-outline-primary fw-bold me-2" style={{ fontSize: '12px' }} onClick={() => {
+                                                                    setEditingDeptId(person.id);
+                                                                    setNewDeptValue(person.department || 'Temel Bankacılık');
+                                                                }}>
+                                                                    Bölüm Değiştir
+                                                                </button>
+                                                                <button className="btn btn-sm btn-outline-danger fw-bold" style={{ fontSize: '12px' }} disabled={person.id === currentUser.id} onClick={() => handleDeleteEmployee(person)}>
+                                                                    İlişiği Kes
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </td>
+                                                    
+                                                    
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2. SEKME: SİSTEM AYARLARI */}
+                        {adminActiveTab === 'settings' && (
+                            <div className="row">
+                                <div className="col-md-6">
+                                    <div className="card border-0 shadow-sm rounded-4 p-4 h-100">
+                                        <h6 className="fw-bold text-dark mb-3">Ofiste Bulunma Zorunluluğu</h6>
+                                        <p className="text-muted small mb-4">Bir departmanda operasyonun durmaması için ofiste <b>kalması gereken</b> minimum personel oranını (%) belirleyin.</p>
+                                        
+                                        <label className="form-label fw-bold small text-dark">Minimum Kalma Oranı (%)</label>
+                                        <select 
+                                            className="form-select bg-light border-0 shadow-none fw-bold text-danger" 
+                                            value={minOfficeRate} 
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value, 10);
+                                                setMinOfficeRate(val);
+                                                localStorage.setItem('minOfficeRate', val);
+                                                showCustomAlert('Kural Güncellendi', `Departmanlarda ofiste kalması gereken minimum kişi oranı %${val} olarak ayarlandı.`, 'success');
+                                            }}
+                                        >
+                                            {Array.from({ length: 21 }, (_, i) => i * 5).map(val => (
+                                                <option key={val} value={val}>%{val} ofiste kalmalı</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="col-md-6 mt-3 mt-md-0">
+                                    <div className="card border-0 shadow-sm rounded-4 p-4 h-100">
+                                        <h6 className="fw-bold text-dark mb-3">Kritik Rol Koruması</h6>
+                                        <p className="text-muted small mb-4">Departmanda aynı role sahip birden fazla kişi varsa, en az 1 kişinin ofiste kalmasını zorunlu tutar.</p>
+                                        
+                                        <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded-3">
+                                            <div>
+                                                <div className="fw-bold text-dark" style={{ fontSize: '14px' }}>Koruma Modu</div>
+                                                <div className="text-muted" style={{ fontSize: '12px' }}>Aktif olduğunda son kişiye izin vermez.</div>
+                                            </div>
+                                            <div className="form-check form-switch fs-4 m-0">
+                                                <input className="form-check-input" type="checkbox" role="switch" defaultChecked onChange={(e) => alert(`Kural ${e.target.checked ? 'açıldı' : 'kapatıldı'}`)} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+                </div>
+            </div>
+        )}
+
             {customAlert.isOpen && (
                 <div 
                     className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" 
-                    style={{ backgroundColor: 'rgba(30, 33, 36, 0.6)', backdropFilter: 'blur(5px)', zIndex: 1055 }}
+                    style={{ backgroundColor: 'rgba(30, 33, 36, 0.6)', backdropFilter: 'blur(5px)', zIndex: 10005 }}
                 >
                     <div 
                         className="card border-0 shadow-lg text-center p-4" 
