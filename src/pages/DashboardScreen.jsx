@@ -57,6 +57,10 @@ export default function DashboardScreen({ user, onLogout }) {
         return saved !== null ? parseInt(saved, 10) : 30; 
     });
     
+    const [maxNegativeLeave, setMaxNegativeLeave] = useState(() => {
+        const saved = localStorage.getItem('maxNegativeLeave');
+        return saved !== null ? parseInt(saved, 10) : 14;
+    });
     
 
     const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -428,6 +432,17 @@ export default function DashboardScreen({ user, onLogout }) {
             }
         }
 
+        const newRemaining = remainingLeaves - selectedDays.length;
+
+        if (newStatus === 'Kesinleşen' && newRemaining < -maxNegativeLeave) {
+            showCustomAlert(
+                'İzin Limiti Aşıldı',
+                `Bu işlemi yaparsanız izin bakiyeniz ${newRemaining} güne düşecektir. Kurumumuzda maksimum eksi bakiye sınırı -${maxNegativeLeave} gündür. Lütfen gün sayısını azaltın.`,
+                'danger'
+            );
+            return;
+        }
+
         const ruleCheck = checkLeaveRules(selectedDays);
         
         let title = '';
@@ -467,6 +482,8 @@ export default function DashboardScreen({ user, onLogout }) {
             async () => {
 
             try {
+                    const apiStatus = newStatus === 'Kesinleşen' ? 'Approved' : 'Planned';
+
                     const request = selectedDays.map(day => {
                         const leaveDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                         const existingLeave = currentMonthLeaves.find(l => l.day === day);
@@ -478,7 +495,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                 startDate: leaveDate,
                                 endDate: leaveDate,
                                 requestDate: new Date().toISOString(),
-                                status: newStatus
+                                status: apiStatus
                             });
                         } else {
                             return api.post('/Leave', {
@@ -486,7 +503,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                 startDate: leaveDate,
                                 endDate: leaveDate,
                                 requestDate: new Date().toISOString(),
-                                status: newStatus
+                                status: apiStatus
                             });
                         }
                     });
@@ -649,6 +666,13 @@ export default function DashboardScreen({ user, onLogout }) {
         if (filterDepartment === 'Bankacılık Hizmetleri') {
             return person.department === 'Nakit Yönetimi' || person.department === 'Çek Senet';
         }
+
+        if (filterDepartment === 'Nakit Yönetimi' || filterDepartment === 'Çek Senet') {
+            if (person.title === 'Yönetici' && (person.department === 'Nakit Yönetimi' || person.department === 'Çek Senet')) {
+                return true;
+            }
+        }
+
         return person.department === filterDepartment;
     });
 
@@ -692,9 +716,8 @@ export default function DashboardScreen({ user, onLogout }) {
             true,
             async () => {
                 try {
-                    await api.put(`/Auth/UpdateProfile/${person.id}`, {
-                        department: person.department,
-                        title: isCurrentlyAdmin ? 'Analist' : 'Yönetici'
+                    await api.post(`/Auth/toggle-admin/${person.id}`, {
+                        isAdmin: !isCurrentlyAdmin
                     });
                     await fetchAllStaff();
                     showCustomAlert('Başarılı', 'Yetki başarıyla güncellendi.', 'success');
@@ -1756,35 +1779,68 @@ export default function DashboardScreen({ user, onLogout }) {
 
                         {/* 2. SEKME: SİSTEM AYARLARI */}
                         {adminActiveTab === 'settings' && (
-                            <div className="row">
-                                <div className="col-md-6">
+                            <div className="row g-4"> {/* g-4: Tüm kartların arasına eşit ve şık bir boşluk atar */}
+                                
+                                {/* 1. KART: Ofiste Bulunma Zorunluluğu */}
+                                <div className="col-lg-6">
                                     <div className="card border-0 shadow-sm rounded-4 p-4 h-100">
                                         <h6 className="fw-bold text-dark mb-3">Ofiste Bulunma Zorunluluğu</h6>
                                         <p className="text-muted small mb-4">Bir departmanda operasyonun durmaması için ofiste <b>kalması gereken</b> minimum personel oranını (%) belirleyin.</p>
                                         
-                                        <label className="form-label fw-bold small text-dark">Minimum Kalma Oranı (%)</label>
-                                        <select 
-                                            className="form-select bg-light border-0 shadow-none fw-bold text-danger" 
-                                            value={minOfficeRate} 
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value, 10);
-                                                setMinOfficeRate(val);
-                                                localStorage.setItem('minOfficeRate', val);
-                                                showCustomAlert('Kural Güncellendi', `Departmanlarda ofiste kalması gereken minimum kişi oranı %${val} olarak ayarlandı.`, 'success');
-                                            }}
-                                        >
-                                            {Array.from({ length: 21 }, (_, i) => i * 5).map(val => (
-                                                <option key={val} value={val}>%{val} ofiste kalmalı</option>
-                                            ))}
-                                        </select>
+                                        <div className="mt-auto">
+                                            <label className="form-label fw-bold small text-dark">Minimum Kalma Oranı (%)</label>
+                                            <select 
+                                                className="form-select bg-light border-0 shadow-none fw-bold text-danger" 
+                                                value={minOfficeRate} 
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value, 10);
+                                                    setMinOfficeRate(val);
+                                                    localStorage.setItem('minOfficeRate', val);
+                                                    showCustomAlert('Kural Güncellendi', `Departmanlarda ofiste kalması gereken minimum kişi oranı %${val} olarak ayarlandı.`, 'success');
+                                                }}
+                                            >
+                                                {Array.from({ length: 21 }, (_, i) => i * 5).map(val => (
+                                                    <option key={val} value={val}>%{val} ofiste kalmalı</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="col-md-6 mt-3 mt-md-0">
+
+                                {/* 2. KART: Maksimum Avans İzin Sınırı */}
+                                <div className="col-lg-6">
+                                    <div className="card border-0 shadow-sm rounded-4 p-4 h-100">
+                                        <h6 className="fw-bold text-dark mb-3">Maksimum Avans İzin Sınırı</h6>
+                                        <p className="text-muted small mb-4">Personelin bir sonraki yıldan borçlanarak kullanabileceği maksimum eksi gün (avans) sınırını belirleyin.</p>
+                                        
+                                        <div className="d-flex align-items-center gap-3 mt-auto">
+                                            <label className="form-label fw-bold small text-dark mb-0">Eksi Sınır (Gün):</label>
+                                            <input 
+                                                type="number" 
+                                                className="form-control bg-light border-0 shadow-none fw-bold text-danger text-center" 
+                                                style={{ width: '80px' }}
+                                                min="0" 
+                                                max="50"
+                                                value={maxNegativeLeave} 
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val)) {
+                                                        setMaxNegativeLeave(val);
+                                                        localStorage.setItem('maxNegativeLeave', val);
+                                                    }
+                                                }} 
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. KART: Kritik Rol Koruması */}
+                                <div className="col-lg-6">
                                     <div className="card border-0 shadow-sm rounded-4 p-4 h-100">
                                         <h6 className="fw-bold text-dark mb-3">Kritik Rol Koruması</h6>
                                         <p className="text-muted small mb-4">Departmanda aynı role sahip birden fazla kişi varsa, en az 1 kişinin ofiste kalmasını zorunlu tutar.</p>
                                         
-                                        <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded-3">
+                                        <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 mt-auto">
                                             <div>
                                                 <div className="fw-bold text-dark" style={{ fontSize: '14px' }}>Koruma Modu</div>
                                                 <div className="text-muted" style={{ fontSize: '12px' }}>Aktif olduğunda son kişiye izin vermez.</div>
@@ -1795,6 +1851,7 @@ export default function DashboardScreen({ user, onLogout }) {
                                         </div>
                                     </div>
                                 </div>
+
                             </div>
                         )}
 
