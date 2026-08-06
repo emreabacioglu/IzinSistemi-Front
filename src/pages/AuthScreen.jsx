@@ -91,21 +91,23 @@ export default function AuthScreen({ onLogin }) {
         }
 
         try {
-            setRegStep(2);
-            setTimeLeft(300);
-            setResendTimer(30);
-
+            // İSTEĞİ AT (Adımı değiştirmeden önce yanıtı bekle)
             await api.post('/Auth/Register', {
                 name: regName,
                 surname: regSurname,
                 email: regEmail,
                 password: regPassword
             });
+
+            // İSTEK BAŞARILIYSA 2. ADIMA GEÇ
+            setRegStep(2);
+            setTimeLeft(300);
+            setResendTimer(30);
+
         } catch (error) {
             console.error('Kayıt sırasında hata oluştu:', error);
             const msg = error.response?.data?.message || 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.';
             showCustomAlert('Kayıt Hatası', msg, 'danger');
-            setRegStep(1);
         }
     };
 
