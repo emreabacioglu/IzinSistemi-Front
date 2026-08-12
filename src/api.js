@@ -22,9 +22,9 @@ api.interceptors.response.use((response) => {
   if (error.response) {
     const status = error.response.status;
 
-    if (status === 401 || (status === 404 && error.config.url.includes('/Auth/VerifySession'))) {
-            window.dispatchEvent(new CustomEvent('force-logout', { detail: 'Hesabınız silinmiş veya yetkiniz değiştirilmiş olabilir.' }));
-        }
+    if (status === 401 || ((status === 404 || status === 400) && error.config.url.includes('/Auth/VerifySession'))) {
+        window.dispatchEvent(new CustomEvent('force-logout', { detail: 'Hesabınız silinmiş veya yetkiniz değiştirilmiş olabilir.' }));
+    }
   }
   
   return Promise.reject(error);
