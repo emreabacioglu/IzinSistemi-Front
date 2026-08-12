@@ -398,7 +398,7 @@ export default function DashboardScreen({ user, onLogout }) {
                 };
             }
 
-            if (totalRoleStaff > 1 && (totalRoleStaff - (othersOnLeaveInRole + 1) < 1)) {
+            if (criticalRoleProtection && totalRoleStaff > 1 && (totalRoleStaff - (othersOnLeaveInRole + 1) < 1)) {
                 const monthName = months.find(m => m.value === selectedMonth)?.name;
                 return {
                     hasWarning: true,
@@ -582,8 +582,8 @@ export default function DashboardScreen({ user, onLogout }) {
                 department: selectedDept,
                 title: selectedTitle,
                 totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
-                birthDate: formattedBirthDate,
-                leaveResetDate: formattedLeaveReset
+                birthDay: formattedBirthDate,
+                leaveReset: formattedLeaveReset
             });
 
             const updatedUser = { 
@@ -759,6 +759,12 @@ export default function DashboardScreen({ user, onLogout }) {
             showCustomAlert('Hata', 'Departman güncellenirken hata oluştu.', 'danger');
         }
     };
+
+
+    const [criticalRoleProtection, setCriticalRoleProtection] = useState(() => {
+        const saved = localStorage.getItem('criticalRoleProtection');
+        return saved !== null ? saved === 'true' : true;
+    });
 
 
     const handleExportExcel = () => {
@@ -943,15 +949,20 @@ export default function DashboardScreen({ user, onLogout }) {
                             <li>
                                 <button className="dropdown-item custom-dropdown-item d-flex align-items-center gap-2" onClick={() => { 
                                     const localUser = JSON.parse(localStorage.getItem('user')) || {};
-
                                     setSelectedDept(user?.department && user.department !== 'Belirtilmedi' ? user.department : '');
                                     setSelectedTitle(user?.title || '');
                                     setTotalLeaveDays(localUser.totalLeaveDays || 14);
-                                    setLeaveResetDate(localUser.leaveResetDate || '');
-                                    setLeaveResetMonth(localUser.leaveResetMonth || '');
-                                    setBirthDate(localUser.birthDate || '');
-                                    setBirthMonth(localUser.birthMonth || '');
-
+                                    
+                                    if (localUser.leaveReset) {
+                                        const ld = new Date(localUser.leaveReset);
+                                        setLeaveResetDate(ld.getDate());
+                                        setLeaveResetMonth(ld.getMonth() + 1);
+                                    }
+                                    if (localUser.birthDay) {
+                                        const bd = new Date(localUser.birthDay);
+                                        setBirthDate(bd.getDate());
+                                        setBirthMonth(bd.getMonth() + 1);
+                                    }
                                     setShowEditProfileModal(true); 
                                     setShowProfileMenu(false);
                                 }}>
@@ -1846,7 +1857,17 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 <div className="text-muted" style={{ fontSize: '12px' }}>Aktif olduğunda son kişiye izin vermez.</div>
                                             </div>
                                             <div className="form-check form-switch fs-4 m-0">
-                                                <input className="form-check-input" type="checkbox" role="switch" defaultChecked onChange={(e) => alert(`Kural ${e.target.checked ? 'açıldı' : 'kapatıldı'}`)} />
+                                                <input 
+                                                    className="form-check-input" 
+                                                    type="checkbox" 
+                                                    role="switch" 
+                                                    checked={criticalRoleProtection} 
+                                                    onChange={(e) => {
+                                                        setCriticalRoleProtection(e.target.checked);
+                                                        localStorage.setItem('criticalRoleProtection', e.target.checked);
+                                                        showCustomAlert('Kural Güncellendi', `Kritik rol koruması ${e.target.checked ? 'aktif edildi' : 'kapatıldı'}.`, 'success');
+                                                    }} 
+                                                />
                                             </div>
                                         </div>
                                     </div>
