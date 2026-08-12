@@ -163,16 +163,28 @@ export default function AuthScreen({ onLogin }) {
         }
     };
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
 
         if (!email || !password) {
             showCustomAlert('Eksik Bilgi', 'Lütfen e-posta ve şifre alanlarını doldurun.', 'warning');
             return;
         }    
-        onLogin(email, password);
-    };
+        
+        try {
+            const response = await api.post('/Employee/login', { email, password });
+            
+            if (response.status === 200) {
 
+                onLogin(response.data);
+            }
+        } catch (error) {
+
+            console.error('Giriş Hatası:', error);
+            showCustomAlert('Giriş Başarısız', 'Geçersiz e-posta veya şifre.', 'danger');
+        }
+    };
+    
     const isOtpValid = otp.every(val => val !== '');
 
     const [timeLeft, setTimeLeft] = useState(300);

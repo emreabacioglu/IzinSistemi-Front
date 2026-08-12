@@ -34,6 +34,13 @@ export default function App() {
             } else {
                 
                 const savedUser = JSON.parse(savedUserStr);
+
+                const userId = savedUser.id || savedUser.Id;
+                if (!userId) {
+                    handleForceLogout();
+                    return;
+                }
+
                 setUser(savedUser);
                 verifyUserSession(savedUser.id);
             }
@@ -73,8 +80,10 @@ export default function App() {
                     const userStr = localStorage.getItem('user');
                     if (userStr) {
                         const parsedUser = JSON.parse(userStr);
-                        
-                        verifyUserSession(parsedUser.id);
+                        const safeUserId = parsedUser.id || parsedUser.Id;
+                        if (safeUserId) {
+                            verifyUserSession(safeUserId);
+                        }
                     }
                 }
             };
