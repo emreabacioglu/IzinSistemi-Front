@@ -1264,16 +1264,14 @@ export default function DashboardScreen({ user, onLogout }) {
                                                 }
 
                                                 let isBirthday = false;
+
                                                 if (person.id === currentUser.id && birthDate && birthMonth) {
                                                     isBirthday = (parseInt(birthDate) === day && parseInt(birthMonth) === selectedMonth);
-                                                } else {
-                
-                                                    if (person.birthDate) {
-                                                        const bDate = new Date(person.birthDate);
+                                                } 
+                                                else if (person.birthDay) {
+                                                        const bDate = new Date(person.birthDay);
                                                         isBirthday = (bDate.getDate() === day && (bDate.getMonth() + 1) === selectedMonth);
-                                                    } else if (person.birthDay && person.birthMonth) {
-                                                        isBirthday = (person.birthDay === day && person.birthMonth === selectedMonth);
-                                                    }
+                                                    
                                                 }
 
                                                 return (
