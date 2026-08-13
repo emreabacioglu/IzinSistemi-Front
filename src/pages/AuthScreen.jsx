@@ -154,7 +154,7 @@ export default function AuthScreen({ onLogin }) {
             });
 
             if (response.status === 200) {
-                onLogin(regEmail, regPassword);
+                onLogin(response.data);
             }
         } catch (error) {
             console.error('OTP Doğrulama Hatası:', error);
