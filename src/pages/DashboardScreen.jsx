@@ -104,11 +104,21 @@ export default function DashboardScreen({ user, onLogout }) {
         if (savedUserStr) {
             try {
                 const savedUser = JSON.parse(savedUserStr);
-                if (savedUser.birthDate) setBirthDate(savedUser.birthDate);
-                if (savedUser.birthMonth) setBirthMonth(savedUser.birthMonth);
+
                 if (savedUser.totalLeaveDays) setTotalLeaveDays(savedUser.totalLeaveDays);
-                if (savedUser.leaveResetDate) setLeaveResetDate(savedUser.leaveResetDate);
-                if (savedUser.leaveResetMonth) setLeaveResetMonth(savedUser.leaveResetMonth);
+
+                if (savedUser.birthDay) {
+                    const bd = new Date(savedUser.birthDay);
+                    setBirthDate(bd.getDate());
+                    setBirthMonth(bd.getMonth() + 1);
+                }
+
+                if (savedUser.leaveReset) {
+                    const ld = new Date(savedUser.leaveReset);
+                    setLeaveResetDate(ld.getDate());
+                    setLeaveResetMonth(ld.getMonth() + 1);
+                }
+                
             } catch (error) {
                 console.error("Local ayarlar yüklenemedi:", error);
             }
@@ -582,7 +592,7 @@ export default function DashboardScreen({ user, onLogout }) {
                 department: selectedDept,
                 title: selectedTitle,
                 totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
-                birthDay: formattedBirthDate,
+                birthday: formattedBirthDate,
                 leaveReset: formattedLeaveReset
             });
 
@@ -590,8 +600,8 @@ export default function DashboardScreen({ user, onLogout }) {
                 ...user, 
                 department: selectedDept, 
                 title: selectedTitle,
-                birthDate: formattedBirthDate,
-                leaveResetDate: formattedLeaveReset,
+                birthDay: formattedBirthDate,
+                leaveReset: formattedLeaveReset,
                 leaveResetMonth: leaveResetMonth
             };
             localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -626,22 +636,23 @@ export default function DashboardScreen({ user, onLogout }) {
                 department: selectedDept,
                 title: selectedTitle,
                 totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
-                birthDate: formattedBirthDate,
-                leaveResetDate: formattedLeaveReset
+                birthday: formattedBirthDate,
+                leaveReset: formattedLeaveReset
             });
 
             const updatedUser = { 
                 ...user, 
                 department: selectedDept, 
                 title: selectedTitle,
-                birthDate: formattedBirthDate,
-                leaveResetDate: formattedLeaveReset
+                totalLeaveDays: totalLeaveDays ? parseInt(totalLeaveDays) : 14,
+                birthDay: formattedBirthDate,
+                leaveReset: formattedLeaveReset
             };
             localStorage.setItem('user', JSON.stringify(updatedUser));
 
             setFilterDepartment(selectedDept);
             await fetchAllStaff();
-            setShowEditProfileModal(false); // Yeni ekranı kapatır
+            setShowEditProfileModal(false); 
 
             showCustomAlert('Başarılı', 'Profil ayarlarınız başarıyla güncellendi.', 'success');
 
